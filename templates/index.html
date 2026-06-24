@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Duck House Cafe — Order</title>
+<style>
+  :root {
+    --bg: #f6f1e7;
+    --card: #ffffff;
+    --ink: #2e2620;
+    --muted: #8a7f72;
+    --line: #e6ddcf;
+    --brand: #b5651d;
+    --brand-dark: #93500f;
+    --hot: #d9534f;
+    --iced: #2f8fb0;
+    --ok: #2e7d4f;
+    --danger: #c0392b;
+    --shadow: 0 2px 8px rgba(70,50,20,.10);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--ink);
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--brand);
+    color: #fff; padding: 10px 14px; display: flex; align-items: center;
+    justify-content: space-between; box-shadow: var(--shadow);
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 700; }
+  header .summary { font-size: 13px; text-align: right; line-height: 1.3; opacity: .95; }
+  header .summary b { font-size: 16px; }
+
+  /* tabs */
+  .tabs { display: flex; background: var(--brand-dark); }
+  .tabs button {
+    flex: 1; border: none; background: transparent; color: #f4e6d6; padding: 12px;
+    font-size: 15px; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent;
+  }
+  .tabs button.active { color: #fff; border-bottom-color: #fff; background: rgba(255,255,255,.08); }
+
+  .layout { display: flex; gap: 14px; padding: 14px; max-width: 1100px; margin: 0 auto; }
+  .menu-col { flex: 1 1 60%; min-width: 0; }
+  .order-col { flex: 1 1 40%; min-width: 0; }
+
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+  .chip {
+    flex: 0 0 auto; border: 1px solid var(--line); background: var(--card);
+    color: var(--muted); padding: 7px 14px; border-radius: 999px; font-size: 14px;
+    cursor: pointer; font-weight: 600;
+  }
+  .chip.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+  .item {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 10px; text-align: left; cursor: pointer; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 6px; min-height: 78px;
+    transition: transform .05s ease;
+  }
+  .item:active { transform: scale(.96); }
+  .item .name { font-weight: 700; font-size: 15px; line-height: 1.2; }
+  .item .meta { display: flex; align-items: center; justify-content: space-between; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; color: #fff; }
+  .badge.Hot { background: var(--hot); }
+  .badge.Iced { background: var(--iced); }
+  .badge.none { background: #b59a6e; }
+  .price { font-weight: 800; font-size: 15px; }
+
+  .order-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow); position: sticky; top: 110px; overflow: hidden;
+  }
+  .order-head { padding: 12px 14px; border-bottom: 1px solid var(--line); font-weight: 700; }
+  .lines { max-height: 38vh; overflow-y: auto; }
+  .line { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .line .ln-name { flex: 1; min-width: 0; }
+  .line .ln-name b { display: block; font-size: 14px; }
+  .line .ln-name span { font-size: 12px; color: var(--muted); }
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper button {
+    width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); font-size: 18px; font-weight: 700; cursor: pointer; line-height: 1;
+  }
+  .stepper .qty { min-width: 22px; text-align: center; font-weight: 700; }
+  .ln-total { width: 64px; text-align: right; font-weight: 700; }
+  .empty { padding: 26px 14px; text-align: center; color: var(--muted); }
+
+  .order-foot { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .total-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .total-row .big { font-size: 28px; font-weight: 900; color: var(--brand-dark); }
+  .pay { display: flex; gap: 8px; }
+  .pay button {
+    flex: 1; padding: 11px; border-radius: 10px; border: 2px solid var(--line);
+    background: var(--card); font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  .pay button.sel { border-color: var(--brand); background: #fbeede; color: var(--brand-dark); }
+  textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 9px;
+    font: inherit; resize: vertical; min-height: 42px;
+  }
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 14px; border-radius: 12px; border: none; font-size: 16px;
+    font-weight: 800; cursor: pointer;
+  }
+  .btn-save { background: var(--ok); color: #fff; }
+  .btn-save:disabled { background: #b8c6bd; cursor: not-allowed; }
+  .btn-clear { flex: 0 0 auto; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+
+  /* orders / history view */
+  .history { max-width: 760px; margin: 0 auto; padding: 14px; }
+  .datebar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .datebar button {
+    width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); font-size: 18px; font-weight: 700; cursor: pointer;
+  }
+  .datebar input[type=date] {
+    flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 10px;
+    font: inherit; background: var(--card);
+  }
+  .datebar .today-btn { width: auto; padding: 0 14px; font-size: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: var(--shadow); }
+  .stat .label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .stat .value { font-size: 22px; font-weight: 900; color: var(--brand-dark); margin-top: 2px; }
+  .stat.cash .value { color: var(--ok); }
+  .stat.transfer .value { color: var(--iced); }
+
+  .ocard { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); margin-bottom: 10px; overflow: hidden; }
+  .ocard .otop { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .ocard .otime { font-weight: 700; }
+  .pm-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+  .pm-badge.Cash { background: #e3f3e9; color: var(--ok); }
+  .pm-badge.Transfer { background: #e2eff4; color: var(--iced); }
+  .ocard .obody { padding: 8px 14px; }
+  .ocard .oline { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; }
+  .ocard .oline span:first-child { color: var(--ink); }
+  .ocard .ocomment { font-size: 13px; color: var(--muted); font-style: italic; margin-top: 4px; }
+  .ocard .ofoot { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .ocard .ofoot .ot { font-size: 18px; font-weight: 900; color: var(--brand-dark); }
+  .del-btn { background: #fbeaea; color: var(--danger); border: 1px solid #f0cccc; border-radius: 9px; padding: 7px 12px; font-weight: 700; cursor: pointer; font-size: 13px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(80px);
+    background: var(--ok); color: #fff; padding: 12px 20px; border-radius: 999px;
+    font-weight: 700; box-shadow: var(--shadow); opacity: 0; transition: all .25s ease; z-index: 20;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 760px) {
+    .layout { flex-direction: column; padding: 10px; gap: 10px; }
+    .order-card { position: static; }
+    .lines { max-height: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🦆 Duck House Cafe</h1>
+  <div class="summary" id="summary">Today<br><b>–</b></div>
+</header>
+<nav class="tabs">
+  <button id="tab-new" class="active" onclick="showView('new')">🧾 New order</button>
+  <button id="tab-orders" onclick="showView('orders')">📊 Orders</button>
+</nav>
+
+<!-- NEW ORDER VIEW -->
+<div id="view-new" class="layout">
+  <div class="menu-col">
+    <div class="chips" id="chips"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+  <div class="order-col">
+    <div class="order-card">
+      <div class="order-head">Current order</div>
+      <div class="lines" id="lines"><div class="empty">Tap a drink to start an order</div></div>
+      <div class="order-foot">
+        <div class="total-row"><span>Total</span><span class="big" id="total">฿0</span></div>
+        <div class="pay" id="pay">
+          <button data-pm="Cash" class="sel">💵 Cash</button>
+          <button data-pm="Transfer">🏦 Transfer</button>
+        </div>
+        <textarea id="comment" placeholder="Comment (optional) — e.g. less sweet, table 3"></textarea>
+        <div class="actions">
+          <button class="btn btn-save" id="save" disabled>Save order</button>
+          <button class="btn btn-clear" id="clear">Clear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ORDERS / HISTORY VIEW -->
+<div id="view-orders" class="history hidden">
+  <div class="datebar">
+    <button onclick="shiftDate(-1)" aria-label="Previous day">‹</button>
+    <input type="date" id="histDate">
+    <button class="today-btn" onclick="goToday()">Today</button>
+    <button onclick="shiftDate(1)" aria-label="Next day">›</button>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div id="orderList"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const money = n => "฿" + (Math.round(n * 100) / 100).toLocaleString();
+const todayStr = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
+let MENU = [];
+let order = [];           // {key, name, temperature, unit_price, qty}
+let payment = "Cash";
+
+/* ---------- view switching ---------- */
+function showView(v) {
+  document.getElementById("view-new").classList.toggle("hidden", v !== "new");
+  document.getElementById("view-orders").classList.toggle("hidden", v !== "orders");
+  document.getElementById("tab-new").classList.toggle("active", v === "new");
+  document.getElementById("tab-orders").classList.toggle("active", v === "orders");
+  if (v === "orders") loadHistory();
+}
+
+/* ---------- menu + new order ---------- */
+async function loadMenu() {
+  MENU = await (await fetch("/api/menu")).json();
+  const cats = [...new Set(MENU.map(m => m.category))];
+  const chips = document.getElementById("chips");
+  chips.innerHTML = "";
+  chips.appendChild(mkChip("All", true));
+  cats.forEach(c => chips.appendChild(mkChip(c, false)));
+  renderGrid("All");
+}
+function mkChip(label, active) {
+  const b = document.createElement("button");
+  b.className = "chip" + (active ? " active" : "");
+  b.textContent = label;
+  b.onclick = () => {
+    document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+    b.classList.add("active");
+    renderGrid(label);
+  };
+  return b;
+}
+function renderGrid(cat) {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  MENU.filter(m => cat === "All" || m.category === cat).forEach(m => {
+    const el = document.createElement("button");
+    el.className = "item";
+    const tempBadge = m.temperature
+      ? `<span class="badge ${m.temperature}">${m.temperature}</span>`
+      : `<span class="badge none">Dessert</span>`;
+    const priceTxt = m.is_custom ? "Custom" : money(m.price);
+    el.innerHTML = `<div class="name">${m.name}</div>
+      <div class="meta">${tempBadge}<span class="price">${priceTxt}</span></div>`;
+    el.onclick = () => addItem(m);
+    grid.appendChild(el);
+  });
+}
+function addItem(m) {
+  let name = m.name, price = m.price, temp = m.temperature;
+  if (m.is_custom) {
+    name = (prompt("Dessert name?", "") || "").trim();
+    if (!name) return;
+    const p = parseFloat(prompt(`Price for "${name}"? (฿)`, ""));
+    if (!(p >= 0)) { alert("Enter a valid price."); return; }
+    price = p;
+  }
+  const key = `${name}|${temp}|${price}`;
+  const found = order.find(o => o.key === key);
+  if (found) found.qty += 1;
+  else order.push({ key, name, temperature: temp, unit_price: price, qty: 1 });
+  renderOrder();
+}
+function changeQty(key, delta) {
+  const o = order.find(x => x.key === key);
+  if (!o) return;
+  o.qty += delta;
+  if (o.qty <= 0) order = order.filter(x => x.key !== key);
+  renderOrder();
+}
+function renderOrder() {
+  const box = document.getElementById("lines");
+  if (order.length === 0) {
+    box.innerHTML = `<div class="empty">Tap a drink to start an order</div>`;
+  } else {
+    box.innerHTML = "";
+    order.forEach(o => {
+      const tempTxt = o.temperature ? o.temperature + " · " : "";
+      const div = document.createElement("div");
+      div.className = "line";
+      div.innerHTML = `
+        <div class="ln-name"><b>${o.name}</b><span>${tempTxt}${money(o.unit_price)} each</span></div>
+        <div class="stepper">
+          <button aria-label="minus">−</button>
+          <span class="qty">${o.qty}</span>
+          <button aria-label="plus">+</button>
+        </div>
+        <div class="ln-total">${money(o.unit_price * o.qty)}</div>`;
+      const [minus, plus] = div.querySelectorAll(".stepper button");
+      minus.onclick = () => changeQty(o.key, -1);
+      plus.onclick = () => changeQty(o.key, +1);
+      box.appendChild(div);
+    });
+  }
+  const total = order.reduce((s, o) => s + o.unit_price * o.qty, 0);
+  document.getElementById("total").textContent = money(total);
+  document.getElementById("save").disabled = order.length === 0;
+}
+
+document.getElementById("pay").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  payment = b.dataset.pm;
+  document.querySelectorAll("#pay button").forEach(x => x.classList.remove("sel"));
+  b.classList.add("sel");
+};
+document.getElementById("clear").onclick = () => {
+  if (order.length && !confirm("Clear this order?")) return;
+  order = []; document.getElementById("comment").value = ""; renderOrder();
+};
+document.getElementById("save").onclick = async () => {
+  const btn = document.getElementById("save");
+  btn.disabled = true;
+  const payload = {
+    lines: order.map(o => ({ name: o.name, temperature: o.temperature,
+                             quantity: o.qty, unit_price: o.unit_price })),
+    payment_method: payment,
+    comment: document.getElementById("comment").value,
+  };
+  try {
+    const res = await fetch("/api/orders", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Save failed");
+    order = []; document.getElementById("comment").value = "";
+    renderOrder();
+    updateSummary(data.summary);
+    toast("Order saved ✓");
+  } catch (err) {
+    alert("Could not save: " + err.message);
+    btn.disabled = false;
+  }
+};
+
+/* ---------- today summary (header) ---------- */
+function updateSummary(s) {
+  document.getElementById("summary").innerHTML =
+    `Today · ${s.orders} orders<br><b>${money(s.revenue)}</b>`;
+}
+async function loadSummary() {
+  updateSummary(await (await fetch("/api/summary")).json());
+}
+
+/* ---------- orders / history ---------- */
+function shiftDate(days) {
+  const inp = document.getElementById("histDate");
+  const d = new Date(inp.value + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  inp.value = d.toLocaleDateString("en-CA");
+  loadHistory();
+}
+function goToday() {
+  document.getElementById("histDate").value = todayStr();
+  loadHistory();
+}
+async function loadHistory() {
+  const inp = document.getElementById("histDate");
+  if (!inp.value) inp.value = todayStr();
+  const day = inp.value;
+  const [summary, orders] = await Promise.all([
+    fetch("/api/summary?date=" + day).then(r => r.json()),
+    fetch("/api/orders?date=" + day).then(r => r.json()),
+  ]);
+  renderStats(summary);
+  renderOrderList(orders);
+}
+function renderStats(s) {
+  const cash = (s.by_payment && s.by_payment.Cash) || 0;
+  const transfer = (s.by_payment && s.by_payment.Transfer) || 0;
+  document.getElementById("stats").innerHTML = `
+    <div class="stat"><div class="label">Orders</div><div class="value">${s.orders}</div></div>
+    <div class="stat"><div class="label">Total revenue</div><div class="value">${money(s.revenue)}</div></div>
+    <div class="stat cash"><div class="label">💵 Cash</div><div class="value">${money(cash)}</div></div>
+    <div class="stat transfer"><div class="label">🏦 Transfer</div><div class="value">${money(transfer)}</div></div>`;
+}
+function renderOrderList(orders) {
+  const box = document.getElementById("orderList");
+  if (!orders.length) {
+    box.innerHTML = `<div class="empty">No orders on this day.</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  orders.forEach(o => {
+    const time = (o.created_at || "").slice(11, 16);
+    const lines = o.lines.map(l => {
+      const t = l.temperature ? ` (${l.temperature})` : "";
+      const qty = l.quantity % 1 === 0 ? l.quantity : l.quantity;
+      return `<div class="oline"><span>${qty} × ${l.name}${t}</span><span>${money(l.line_total)}</span></div>`;
+    }).join("");
+    const comment = o.comment ? `<div class="ocomment">“${o.comment}”</div>` : "";
+    const card = document.createElement("div");
+    card.className = "ocard";
+    card.innerHTML = `
+      <div class="otop">
+        <span class="otime">🕑 ${time}</span>
+        <span class="pm-badge ${o.payment_method}">${o.payment_method === "Cash" ? "💵 Cash" : "🏦 Transfer"}</span>
+      </div>
+      <div class="obody">${lines}${comment}</div>
+      <div class="ofoot">
+        <button class="del-btn">🗑 Delete</button>
+        <span class="ot">${money(o.total)}</span>
+      </div>`;
+    card.querySelector(".del-btn").onclick = () => deleteOrder(o.id);
+    box.appendChild(card);
+  });
+}
+async function deleteOrder(id) {
+  if (!confirm("Delete this order? This cannot be undone.")) return;
+  const res = await fetch("/api/orders/" + id, { method: "DELETE" });
+  const data = await res.json();
+  if (data.summary) updateSummary(data.summary);
+  toast("Order deleted");
+  loadHistory();
+}
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+/* ---------- boot ---------- */
+document.getElementById("histDate").value = todayStr();
+loadMenu();
+loadSummary();
+</script>
+</body>
+</html>

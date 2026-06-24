@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local data & per-machine config (NEVER commit real sales data)
+*.db
+data/
+config.json
+
+# Temp image crops
+_*.png
+
+# OS
+Thumbs.db
+.DS_Store
