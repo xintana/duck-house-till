@@ -65,10 +65,11 @@ _MENU_SEED = [
     ("Coffee", "Latte", "Hot", 60), ("Coffee", "Latte", "Iced", 65),
     ("Coffee", "Vanilla Latte", "Hot", 70), ("Coffee", "Vanilla Latte", "Iced", 75),
     ("Coffee", "Es Yen", "Iced", 60),
+    ("Coffee", "Affogato", "Iced", 75),
     # Non-Coffee
     ("Non-Coffee", "Fresh Milk", "Hot", 35), ("Non-Coffee", "Fresh Milk", "Iced", 40),
     ("Non-Coffee", "Honey Milk", "Iced", 50),
-    ("Non-Coffee", "Iced Cocoa", "Iced", 55),
+    ("Non-Coffee", "Iced Cocoa", "Iced", 65),
     ("Non-Coffee", "Honey Lemon", "Iced", 55),
     ("Non-Coffee", "Honey Lemon Soda", "Iced", 55),
     ("Non-Coffee", "Yuzu Juice", "Iced", 70),
@@ -85,7 +86,7 @@ _MENU_SEED = [
     # Tea (all iced)
     ("Tea", "Thai Milk Tea", "Iced", 60),
     ("Tea", "Ovaltine Thai Tea", "Iced", 65),
-    ("Tea", "Assam Milk Tea", "Iced", 65),
+    ("Tea", "Assam Milk Tea", "Iced", 50),
 ]
 
 
