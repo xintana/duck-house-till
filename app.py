@@ -7,15 +7,16 @@ LAN address shown (same Wi-Fi).
 
 from __future__ import annotations
 
+import io
 import os
 import socket
-from datetime import date
 from pathlib import Path
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file
 
 import config
 import db
+import export
 
 app = Flask(__name__)
 
@@ -35,7 +36,8 @@ def _db_path() -> str:
 
 
 def _today() -> str:
-    return date.today().strftime("%Y-%m-%d")
+    """Today's date in Thailand local time, regardless of the server's own timezone."""
+    return db.today_local()
 
 
 @app.get("/")
@@ -79,6 +81,43 @@ def api_create_order():
 def api_delete_order(order_id: int):
     db.delete_order(_db_path(), order_id)
     return jsonify({"ok": True, "summary": db.get_day_summary(_db_path(), _today())})
+
+
+def _month() -> str:
+    return request.args.get("month") or db.today_local()[:7]
+
+
+@app.get("/api/summary/month")
+def api_month_summary():
+    return jsonify(db.get_month_summary(_db_path(), _month()))
+
+
+@app.get("/api/export/excel")
+def api_export_excel():
+    month = _month()
+    summary = db.get_month_summary(_db_path(), month)
+    orders = db.get_orders_for_month(_db_path(), month)
+    data = export.build_excel(summary, orders)
+    return send_file(
+        io.BytesIO(data),
+        as_attachment=True,
+        download_name=f"sales-{month}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.get("/api/export/pdf")
+def api_export_pdf():
+    month = _month()
+    summary = db.get_month_summary(_db_path(), month)
+    orders = db.get_orders_for_month(_db_path(), month)
+    data = export.build_pdf(summary, orders)
+    return send_file(
+        io.BytesIO(data),
+        as_attachment=True,
+        download_name=f"sales-{month}.pdf",
+        mimetype="application/pdf",
+    )
 
 
 def _lan_ip() -> str:

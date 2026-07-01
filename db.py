@@ -10,12 +10,26 @@ The DB file path is resolved by config.py so it can live in a cloud folder.
 
 from __future__ import annotations
 
+import calendar
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 PAYMENT_METHODS = ("Cash", "Transfer")
+
+# All timestamps recorded/reported by this app use Thailand local time,
+# regardless of the timezone the host server (or the cashier's phone) is set to.
+TZ = ZoneInfo("Asia/Bangkok")
+
+
+def now_local() -> datetime:
+    return datetime.now(TZ)
+
+
+def today_local() -> str:
+    return now_local().strftime("%Y-%m-%d")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS menu_items (
@@ -176,6 +190,88 @@ def get_day_summary(db_path: str | Path, day: str) -> dict:
     }
 
 
+def get_month_summary(db_path: str | Path, year_month: str) -> dict:
+    """Sales summary for a whole month ('YYYY-MM'): totals, top-selling items,
+    and a per-day breakdown (so the caller can find the busiest day)."""
+    year, month = (int(p) for p in year_month.split("-"))
+    days_in_month = calendar.monthrange(year, month)[1]
+    like = f"{year_month}%"
+
+    with connect(db_path) as conn:
+        totals = conn.execute(
+            "SELECT COUNT(*) AS orders, COALESCE(SUM(total), 0) AS revenue "
+            "FROM orders WHERE sale_date LIKE ?",
+            (like,),
+        ).fetchone()
+        by_pm = {
+            r["payment_method"]: r["revenue"]
+            for r in conn.execute(
+                "SELECT payment_method, COALESCE(SUM(total),0) AS revenue "
+                "FROM orders WHERE sale_date LIKE ? GROUP BY payment_method",
+                (like,),
+            ).fetchall()
+        }
+        by_day_rows = {
+            r["sale_date"]: {"orders": r["orders"], "revenue": r["revenue"]}
+            for r in conn.execute(
+                "SELECT sale_date, COUNT(*) AS orders, COALESCE(SUM(total),0) AS revenue "
+                "FROM orders WHERE sale_date LIKE ? GROUP BY sale_date",
+                (like,),
+            ).fetchall()
+        }
+        top_items = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT ol.name AS name, ol.temperature AS temperature, "
+                "SUM(ol.quantity) AS quantity, SUM(ol.line_total) AS revenue "
+                "FROM order_lines ol JOIN orders o ON o.id = ol.order_id "
+                "WHERE o.sale_date LIKE ? "
+                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC LIMIT 10",
+                (like,),
+            ).fetchall()
+        ]
+
+    by_day = []
+    for d in range(1, days_in_month + 1):
+        day_str = f"{year_month}-{d:02d}"
+        rec = by_day_rows.get(day_str, {"orders": 0, "revenue": 0})
+        by_day.append({"date": day_str, "day": d, **rec})
+
+    best_day = max(by_day, key=lambda x: x["orders"]) if any(x["orders"] for x in by_day) else None
+
+    return {
+        "month": year_month,
+        "orders": totals["orders"],
+        "revenue": totals["revenue"],
+        "by_payment": by_pm,
+        "top_items": top_items,
+        "by_day": by_day,
+        "best_day": best_day,
+    }
+
+
+def get_orders_for_month(db_path: str | Path, year_month: str) -> list[dict]:
+    """All orders (with lines) for a given 'YYYY-MM', oldest first — used for exports."""
+    like = f"{year_month}%"
+    with connect(db_path) as conn:
+        orders = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM orders WHERE sale_date LIKE ? ORDER BY sale_date, id",
+                (like,),
+            ).fetchall()
+        ]
+        for o in orders:
+            o["lines"] = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM order_lines WHERE order_id = ? ORDER BY id",
+                    (o["id"],),
+                ).fetchall()
+            ]
+        return orders
+
+
 # ---- writes ----------------------------------------------------------------
 
 def create_order(
@@ -190,7 +286,7 @@ def create_order(
     if payment_method not in PAYMENT_METHODS:
         raise ValueError(f"Unknown payment method: {payment_method!r}")
 
-    now = datetime.now()
+    now = now_local()
     prepared, total = [], 0.0
     for ln in lines:
         qty = float(ln["quantity"])

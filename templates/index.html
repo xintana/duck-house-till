@@ -143,6 +143,23 @@
   .ocard .ofoot .ot { font-size: 18px; font-weight: 900; color: var(--brand-dark); }
   .del-btn { background: #fbeaea; color: var(--danger); border: 1px solid #f0cccc; border-radius: 9px; padding: 7px 12px; font-weight: 700; cursor: pointer; font-size: 13px; }
 
+  /* summary view */
+  .summary-view { max-width: 900px; margin: 0 auto; padding: 14px; }
+  .monthbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .monthbar button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-size: 18px; font-weight: 700; cursor: pointer; }
+  .monthbar input[type=month] { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: var(--card); }
+  .export-row { display: flex; gap: 8px; }
+  .export-row button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-weight: 700; cursor: pointer; }
+  .card-block { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 14px; margin-top: 14px; }
+  .card-block h3 { margin: 0 0 10px; font-size: 15px; }
+  .best-day { font-size: 15px; }
+  .best-day b { color: var(--brand-dark); }
+  table.top-items { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.top-items th, table.top-items td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  table.top-items td:last-child, table.top-items th:last-child,
+  table.top-items td:nth-child(3), table.top-items th:nth-child(3) { text-align: right; }
+  #chart { width: 100%; height: 220px; display: block; }
+
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(80px);
     background: var(--ok); color: #fff; padding: 12px 20px; border-radius: 999px;
@@ -166,6 +183,7 @@
 <nav class="tabs">
   <button id="tab-new" class="active" onclick="showView('new')">🧾 New order</button>
   <button id="tab-orders" onclick="showView('orders')">📊 Orders</button>
+  <button id="tab-summary" onclick="showView('summary')">📈 Summary</button>
 </nav>
 
 <!-- NEW ORDER VIEW -->
@@ -206,6 +224,32 @@
   <div id="orderList"></div>
 </div>
 
+<!-- SUMMARY VIEW -->
+<div id="view-summary" class="summary-view hidden">
+  <div class="monthbar">
+    <button onclick="shiftMonth(-1)" aria-label="Previous month">‹</button>
+    <input type="month" id="summaryMonth">
+    <button onclick="shiftMonth(1)" aria-label="Next month">›</button>
+  </div>
+  <div class="stats" id="summaryStats"></div>
+  <div class="export-row">
+    <button id="exportExcel">⬇️ Export Excel</button>
+    <button id="exportPdf">⬇️ Export PDF</button>
+  </div>
+  <div class="card-block">
+    <h3>Orders by day</h3>
+    <canvas id="chart"></canvas>
+  </div>
+  <div class="card-block">
+    <h3>Busiest day</h3>
+    <div class="best-day" id="bestDay">–</div>
+  </div>
+  <div class="card-block">
+    <h3>Top-selling items</h3>
+    <table class="top-items" id="topItems"></table>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -219,9 +263,12 @@ let payment = "Cash";
 function showView(v) {
   document.getElementById("view-new").classList.toggle("hidden", v !== "new");
   document.getElementById("view-orders").classList.toggle("hidden", v !== "orders");
+  document.getElementById("view-summary").classList.toggle("hidden", v !== "summary");
   document.getElementById("tab-new").classList.toggle("active", v === "new");
   document.getElementById("tab-orders").classList.toggle("active", v === "orders");
+  document.getElementById("tab-summary").classList.toggle("active", v === "summary");
   if (v === "orders") loadHistory();
+  if (v === "summary") loadSummaryMonth();
 }
 
 /* ---------- menu + new order ---------- */
@@ -427,6 +474,82 @@ async function deleteOrder(id) {
   if (data.summary) updateSummary(data.summary);
   toast("Order deleted");
   loadHistory();
+}
+
+/* ---------- summary ---------- */
+function currentMonthStr() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+function shiftMonth(delta) {
+  const inp = document.getElementById("summaryMonth");
+  const [y, m] = inp.value.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  inp.value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  loadSummaryMonth();
+}
+async function loadSummaryMonth() {
+  const inp = document.getElementById("summaryMonth");
+  if (!inp.value) inp.value = currentMonthStr();
+  const month = inp.value;
+  const s = await (await fetch("/api/summary/month?month=" + month)).json();
+  renderSummaryStats(s);
+  renderChart(s.by_day);
+  renderBestDay(s.best_day);
+  renderTopItems(s.top_items);
+  document.getElementById("exportExcel").onclick = () => window.open("/api/export/excel?month=" + month, "_blank");
+  document.getElementById("exportPdf").onclick = () => window.open("/api/export/pdf?month=" + month, "_blank");
+}
+function renderSummaryStats(s) {
+  const cash = (s.by_payment && s.by_payment.Cash) || 0;
+  const transfer = (s.by_payment && s.by_payment.Transfer) || 0;
+  document.getElementById("summaryStats").innerHTML = `
+    <div class="stat"><div class="label">Orders</div><div class="value">${s.orders}</div></div>
+    <div class="stat"><div class="label">Total revenue</div><div class="value">${money(s.revenue)}</div></div>
+    <div class="stat cash"><div class="label">💵 Cash</div><div class="value">${money(cash)}</div></div>
+    <div class="stat transfer"><div class="label">🏦 Transfer</div><div class="value">${money(transfer)}</div></div>`;
+}
+function renderBestDay(bd) {
+  const el = document.getElementById("bestDay");
+  if (!bd) { el.textContent = "No orders recorded this month yet."; return; }
+  const d = new Date(bd.date + "T00:00:00");
+  const label = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  el.innerHTML = `<b>${label}</b> had the most orders — ${bd.orders} orders, ${money(bd.revenue)} revenue.`;
+}
+function renderTopItems(items) {
+  const t = document.getElementById("topItems");
+  if (!items.length) { t.innerHTML = "<tr><td>No sales yet.</td></tr>"; return; }
+  t.innerHTML = `<tr><th>Item</th><th>Temp</th><th>Qty sold</th><th>Revenue</th></tr>` +
+    items.map(it => `<tr><td>${it.name}</td><td>${it.temperature || "-"}</td>
+      <td>${it.quantity % 1 === 0 ? it.quantity : it.quantity.toFixed(1)}</td>
+      <td>${money(it.revenue)}</td></tr>`).join("");
+}
+function renderChart(byDay) {
+  const canvas = document.getElementById("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 600, h = 220;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const max = Math.max(1, ...byDay.map(d => d.orders));
+  const padL = 28, padB = 20, padT = 8;
+  const chartW = w - padL - 6, chartH = h - padB - padT;
+  const barW = chartW / byDay.length;
+  ctx.strokeStyle = "#e6ddcf"; ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + chartH); ctx.lineTo(padL + chartW, padT + chartH); ctx.stroke();
+  ctx.fillStyle = "#8a7f72"; ctx.font = "10px system-ui";
+  ctx.fillText(String(max), 2, padT + 8);
+  ctx.fillText("0", 10, padT + chartH);
+  byDay.forEach((d, i) => {
+    const bh = (d.orders / max) * chartH;
+    ctx.fillStyle = d.orders > 0 ? "#b5651d" : "#efe6d8";
+    ctx.fillRect(padL + i * barW + 1, padT + chartH - bh, Math.max(1, barW - 2), bh);
+    if (byDay.length <= 31 && (d.day % 5 === 0 || d.day === 1)) {
+      ctx.fillStyle = "#8a7f72";
+      ctx.fillText(String(d.day), padL + i * barW, padT + chartH + 12);
+    }
+  });
 }
 
 /* ---------- toast ---------- */

@@ -1,1 +1,4 @@
 Flask>=3,<4
+openpyxl>=3.1,<4
+fpdf2>=2.7,<3
+tzdata; sys_platform == "win32"
