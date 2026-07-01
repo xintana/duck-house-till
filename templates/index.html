@@ -160,6 +160,21 @@
   table.top-items td:nth-child(3), table.top-items th:nth-child(3) { text-align: right; }
   #chart { width: 100%; height: 220px; display: block; }
 
+  /* menu management */
+  .menu-form { display: flex; flex-wrap: wrap; gap: 8px; }
+  .menu-form input, .menu-form select {
+    padding: 9px; border: 1px solid var(--line); border-radius: 8px; font: inherit;
+  }
+  .menu-form input[type=text] { flex: 1 1 160px; }
+  .menu-form input[type=number] { width: 100px; }
+  table.menu-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.menu-table th, table.menu-table td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  table.menu-table input[type=number] { width: 80px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  table.menu-table .inactive-row { opacity: .5; }
+  .mini-btn { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 5px 10px; font-size: 12px; font-weight: 700; cursor: pointer; margin-right: 4px; }
+  .mini-btn.save { background: #e3f3e9; color: var(--ok); border-color: #cdeada; }
+  .mini-btn.danger { background: #fbeaea; color: var(--danger); border-color: #f0cccc; }
+
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(80px);
     background: var(--ok); color: #fff; padding: 12px 20px; border-radius: 999px;
@@ -184,6 +199,7 @@
   <button id="tab-new" class="active" onclick="showView('new')">🧾 New order</button>
   <button id="tab-orders" onclick="showView('orders')">📊 Orders</button>
   <button id="tab-summary" onclick="showView('summary')">📈 Summary</button>
+  <button id="tab-menu" onclick="showView('menu')">⚙️ Menu</button>
 </nav>
 
 <!-- NEW ORDER VIEW -->
@@ -226,7 +242,17 @@
 
 <!-- SUMMARY VIEW -->
 <div id="view-summary" class="summary-view hidden">
-  <div class="monthbar">
+  <div class="chips" id="summaryPeriodChips">
+    <button class="chip active" data-period="day">Daily</button>
+    <button class="chip" data-period="month">Monthly</button>
+  </div>
+  <div class="datebar" id="summaryDayBar" style="margin-top:10px;">
+    <button onclick="shiftSummaryDate(-1)" aria-label="Previous day">‹</button>
+    <input type="date" id="summaryDate">
+    <button class="today-btn" onclick="goSummaryToday()">Today</button>
+    <button onclick="shiftSummaryDate(1)" aria-label="Next day">›</button>
+  </div>
+  <div class="monthbar hidden" id="summaryMonthBar">
     <button onclick="shiftMonth(-1)" aria-label="Previous month">‹</button>
     <input type="month" id="summaryMonth">
     <button onclick="shiftMonth(1)" aria-label="Next month">›</button>
@@ -237,16 +263,39 @@
     <button id="exportPdf">⬇️ Export PDF</button>
   </div>
   <div class="card-block">
-    <h3>Orders by day</h3>
+    <h3 id="chartTitle">Orders by day</h3>
     <canvas id="chart"></canvas>
   </div>
   <div class="card-block">
-    <h3>Busiest day</h3>
+    <h3 id="bestTitle">Busiest day</h3>
     <div class="best-day" id="bestDay">–</div>
   </div>
   <div class="card-block">
     <h3>Top-selling items</h3>
     <table class="top-items" id="topItems"></table>
+  </div>
+</div>
+
+<!-- MENU MANAGEMENT VIEW -->
+<div id="view-menu" class="summary-view hidden">
+  <div class="card-block">
+    <h3>Add a new menu item</h3>
+    <div class="menu-form" id="menuForm">
+      <input type="text" id="newCategory" placeholder="Category (e.g. Coffee)" list="categoryList">
+      <datalist id="categoryList"></datalist>
+      <input type="text" id="newName" placeholder="Name (e.g. Latte)">
+      <select id="newTemp">
+        <option value="">No temperature</option>
+        <option value="Hot">Hot</option>
+        <option value="Iced">Iced</option>
+      </select>
+      <input type="number" id="newPrice" placeholder="Price (฿)" min="0" step="1">
+      <button class="btn btn-save" id="addMenuItem" style="flex:0 0 auto; padding:11px 18px;">+ Add item</button>
+    </div>
+  </div>
+  <div class="card-block">
+    <h3>Existing menu items</h3>
+    <table class="menu-table" id="menuTable"></table>
   </div>
 </div>
 
@@ -264,11 +313,14 @@ function showView(v) {
   document.getElementById("view-new").classList.toggle("hidden", v !== "new");
   document.getElementById("view-orders").classList.toggle("hidden", v !== "orders");
   document.getElementById("view-summary").classList.toggle("hidden", v !== "summary");
+  document.getElementById("view-menu").classList.toggle("hidden", v !== "menu");
   document.getElementById("tab-new").classList.toggle("active", v === "new");
   document.getElementById("tab-orders").classList.toggle("active", v === "orders");
   document.getElementById("tab-summary").classList.toggle("active", v === "summary");
+  document.getElementById("tab-menu").classList.toggle("active", v === "menu");
   if (v === "orders") loadHistory();
-  if (v === "summary") loadSummaryMonth();
+  if (v === "summary") loadSummary_();
+  if (v === "menu") loadMenuAdmin();
 }
 
 /* ---------- menu + new order ---------- */
@@ -477,28 +529,71 @@ async function deleteOrder(id) {
 }
 
 /* ---------- summary ---------- */
+let summaryPeriod = "day"; // "day" | "month"
+
 function currentMonthStr() {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+document.getElementById("summaryPeriodChips").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  summaryPeriod = b.dataset.period;
+  document.querySelectorAll("#summaryPeriodChips .chip").forEach(c => c.classList.remove("active"));
+  b.classList.add("active");
+  document.getElementById("summaryDayBar").classList.toggle("hidden", summaryPeriod !== "day");
+  document.getElementById("summaryMonthBar").classList.toggle("hidden", summaryPeriod !== "month");
+  loadSummary_();
+};
+function shiftSummaryDate(days) {
+  const inp = document.getElementById("summaryDate");
+  const d = new Date(inp.value + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  inp.value = d.toLocaleDateString("en-CA");
+  loadSummary_();
+}
+function goSummaryToday() {
+  document.getElementById("summaryDate").value = todayStr();
+  loadSummary_();
 }
 function shiftMonth(delta) {
   const inp = document.getElementById("summaryMonth");
   const [y, m] = inp.value.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   inp.value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-  loadSummaryMonth();
+  loadSummary_();
 }
-async function loadSummaryMonth() {
-  const inp = document.getElementById("summaryMonth");
-  if (!inp.value) inp.value = currentMonthStr();
-  const month = inp.value;
-  const s = await (await fetch("/api/summary/month?month=" + month)).json();
+function loadSummaryMonth() { loadSummary_(); }
+async function loadSummary_() {
+  const dateInp = document.getElementById("summaryDate");
+  const monthInp = document.getElementById("summaryMonth");
+  if (!dateInp.value) dateInp.value = todayStr();
+  if (!monthInp.value) monthInp.value = currentMonthStr();
+
+  let s, exportMonth;
+  if (summaryPeriod === "day") {
+    const day = dateInp.value;
+    exportMonth = day.slice(0, 7);
+    s = await (await fetch("/api/summary/day?date=" + day)).json();
+    document.getElementById("chartTitle").textContent = "Orders by hour";
+    document.getElementById("bestTitle").textContent = "Busiest hour";
+    renderChart(s.by_hour.map(h => ({ label: String(h.hour), orders: h.orders })));
+    renderBestPeriod(s.best_hour, h => `${String(h.hour).padStart(2, "0")}:00–${String(h.hour).padStart(2, "0")}:59`, "hour");
+  } else {
+    const month = monthInp.value;
+    exportMonth = month;
+    s = await (await fetch("/api/summary/month?month=" + month)).json();
+    document.getElementById("chartTitle").textContent = "Orders by day";
+    document.getElementById("bestTitle").textContent = "Busiest day";
+    renderChart(s.by_day.map(d => ({ label: String(d.day), orders: d.orders })));
+    renderBestPeriod(s.best_day, d => {
+      const dt = new Date(d.date + "T00:00:00");
+      return dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+    }, "day");
+  }
   renderSummaryStats(s);
-  renderChart(s.by_day);
-  renderBestDay(s.best_day);
   renderTopItems(s.top_items);
-  document.getElementById("exportExcel").onclick = () => window.open("/api/export/excel?month=" + month, "_blank");
-  document.getElementById("exportPdf").onclick = () => window.open("/api/export/pdf?month=" + month, "_blank");
+  document.getElementById("exportExcel").onclick = () => window.open("/api/export/excel?month=" + exportMonth, "_blank");
+  document.getElementById("exportPdf").onclick = () => window.open("/api/export/pdf?month=" + exportMonth, "_blank");
 }
 function renderSummaryStats(s) {
   const cash = (s.by_payment && s.by_payment.Cash) || 0;
@@ -509,12 +604,10 @@ function renderSummaryStats(s) {
     <div class="stat cash"><div class="label">💵 Cash</div><div class="value">${money(cash)}</div></div>
     <div class="stat transfer"><div class="label">🏦 Transfer</div><div class="value">${money(transfer)}</div></div>`;
 }
-function renderBestDay(bd) {
+function renderBestPeriod(best, labelFn, noun) {
   const el = document.getElementById("bestDay");
-  if (!bd) { el.textContent = "No orders recorded this month yet."; return; }
-  const d = new Date(bd.date + "T00:00:00");
-  const label = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
-  el.innerHTML = `<b>${label}</b> had the most orders — ${bd.orders} orders, ${money(bd.revenue)} revenue.`;
+  if (!best) { el.textContent = "No orders recorded for this period yet."; return; }
+  el.innerHTML = `<b>${labelFn(best)}</b> had the most orders — ${best.orders} orders, ${money(best.revenue)} revenue.`;
 }
 function renderTopItems(items) {
   const t = document.getElementById("topItems");
@@ -524,7 +617,7 @@ function renderTopItems(items) {
       <td>${it.quantity % 1 === 0 ? it.quantity : it.quantity.toFixed(1)}</td>
       <td>${money(it.revenue)}</td></tr>`).join("");
 }
-function renderChart(byDay) {
+function renderChart(points) {
   const canvas = document.getElementById("chart");
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth || 600, h = 220;
@@ -532,25 +625,113 @@ function renderChart(byDay) {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  const max = Math.max(1, ...byDay.map(d => d.orders));
+  const max = Math.max(1, ...points.map(p => p.orders));
   const padL = 28, padB = 20, padT = 8;
   const chartW = w - padL - 6, chartH = h - padB - padT;
-  const barW = chartW / byDay.length;
+  const barW = chartW / points.length;
   ctx.strokeStyle = "#e6ddcf"; ctx.beginPath();
   ctx.moveTo(padL, padT); ctx.lineTo(padL, padT + chartH); ctx.lineTo(padL + chartW, padT + chartH); ctx.stroke();
   ctx.fillStyle = "#8a7f72"; ctx.font = "10px system-ui";
   ctx.fillText(String(max), 2, padT + 8);
   ctx.fillText("0", 10, padT + chartH);
-  byDay.forEach((d, i) => {
-    const bh = (d.orders / max) * chartH;
-    ctx.fillStyle = d.orders > 0 ? "#b5651d" : "#efe6d8";
+  const labelEvery = Math.ceil(points.length / 12);
+  points.forEach((p, i) => {
+    const bh = (p.orders / max) * chartH;
+    ctx.fillStyle = p.orders > 0 ? "#b5651d" : "#efe6d8";
     ctx.fillRect(padL + i * barW + 1, padT + chartH - bh, Math.max(1, barW - 2), bh);
-    if (byDay.length <= 31 && (d.day % 5 === 0 || d.day === 1)) {
+    if (i % labelEvery === 0) {
       ctx.fillStyle = "#8a7f72";
-      ctx.fillText(String(d.day), padL + i * barW, padT + chartH + 12);
+      ctx.fillText(p.label, padL + i * barW, padT + chartH + 12);
     }
   });
 }
+
+/* ---------- menu management ---------- */
+async function loadMenuAdmin() {
+  const items = await (await fetch("/api/menu?all=1")).json();
+  const cats = [...new Set(items.map(m => m.category))];
+  document.getElementById("categoryList").innerHTML = cats.map(c => `<option value="${c}">`).join("");
+  renderMenuTable(items);
+}
+function renderMenuTable(items) {
+  const t = document.getElementById("menuTable");
+  if (!items.length) { t.innerHTML = "<tr><td>No menu items yet.</td></tr>"; return; }
+  t.innerHTML = "";
+  const header = document.createElement("tr");
+  header.innerHTML = "<th>Category</th><th>Name</th><th>Temp</th><th>Price</th><th>Status</th><th></th>";
+  t.appendChild(header);
+  items.forEach(m => {
+    const row = document.createElement("tr");
+    if (!m.active) row.classList.add("inactive-row");
+    const priceCell = m.is_custom
+      ? "Custom"
+      : `<input type="number" min="0" step="1" value="${m.price ?? 0}">`;
+    row.innerHTML = `
+      <td>${m.category}</td>
+      <td>${m.name}</td>
+      <td>${m.temperature || "-"}</td>
+      <td>${priceCell}</td>
+      <td>${m.active ? "Active" : "Hidden"}</td>
+      <td></td>`;
+    const actionsCell = row.lastElementChild;
+    if (!m.is_custom) {
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "mini-btn save"; saveBtn.textContent = "Save price";
+      saveBtn.onclick = async () => {
+        const price = parseFloat(row.querySelector("input[type=number]").value);
+        if (!(price >= 0)) { alert("Enter a valid price."); return; }
+        await fetch("/api/menu/" + m.id, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ price }),
+        });
+        toast("Price updated ✓");
+        loadMenu();
+      };
+      actionsCell.appendChild(saveBtn);
+    }
+    const toggleBtn = document.createElement("button");
+    toggleBtn.className = "mini-btn"; toggleBtn.textContent = m.active ? "Hide" : "Unhide";
+    toggleBtn.onclick = async () => {
+      await fetch("/api/menu/" + m.id, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: m.active ? 0 : 1 }),
+      });
+      toast(m.active ? "Item hidden" : "Item unhidden");
+      loadMenuAdmin(); loadMenu();
+    };
+    actionsCell.appendChild(toggleBtn);
+    const delBtn = document.createElement("button");
+    delBtn.className = "mini-btn danger"; delBtn.textContent = "Delete";
+    delBtn.onclick = async () => {
+      if (!confirm(`Delete "${m.name}" from the menu? This cannot be undone.`)) return;
+      await fetch("/api/menu/" + m.id, { method: "DELETE" });
+      toast("Item deleted");
+      loadMenuAdmin(); loadMenu();
+    };
+    actionsCell.appendChild(delBtn);
+    t.appendChild(row);
+  });
+}
+document.getElementById("addMenuItem").onclick = async () => {
+  const category = document.getElementById("newCategory").value.trim();
+  const name = document.getElementById("newName").value.trim();
+  const temperature = document.getElementById("newTemp").value;
+  const price = parseFloat(document.getElementById("newPrice").value);
+  if (!category || !name) { alert("Category and name are required."); return; }
+  if (!(price >= 0)) { alert("Enter a valid price."); return; }
+  const res = await fetch("/api/menu", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category, name, temperature, price }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert("Could not add item: " + data.error); return; }
+  document.getElementById("newCategory").value = "";
+  document.getElementById("newName").value = "";
+  document.getElementById("newTemp").value = "";
+  document.getElementById("newPrice").value = "";
+  toast("Menu item added ✓");
+  loadMenuAdmin(); loadMenu();
+};
 
 /* ---------- toast ---------- */
 let toastTimer;
@@ -563,6 +744,8 @@ function toast(msg) {
 
 /* ---------- boot ---------- */
 document.getElementById("histDate").value = todayStr();
+document.getElementById("summaryDate").value = todayStr();
+document.getElementById("summaryMonth").value = currentMonthStr();
 loadMenu();
 loadSummary();
 </script>

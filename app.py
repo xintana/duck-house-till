@@ -47,7 +47,41 @@ def index():
 
 @app.get("/api/menu")
 def api_menu():
-    return jsonify(db.get_menu(_db_path()))
+    include_inactive = request.args.get("all") == "1"
+    return jsonify(db.get_menu(_db_path(), include_inactive=include_inactive))
+
+
+@app.post("/api/menu")
+def api_create_menu_item():
+    data = request.get_json(silent=True) or {}
+    try:
+        item_id = db.create_menu_item(
+            _db_path(),
+            category=data.get("category", ""),
+            name=data.get("name", ""),
+            temperature=data.get("temperature", ""),
+            price=data.get("price"),
+            is_custom=bool(data.get("is_custom", False)),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"id": item_id})
+
+
+@app.patch("/api/menu/<int:item_id>")
+def api_update_menu_item(item_id: int):
+    data = request.get_json(silent=True) or {}
+    try:
+        db.update_menu_item(_db_path(), item_id, **data)
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/menu/<int:item_id>")
+def api_delete_menu_item(item_id: int):
+    db.delete_menu_item(_db_path(), item_id)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/summary")
@@ -85,6 +119,12 @@ def api_delete_order(order_id: int):
 
 def _month() -> str:
     return request.args.get("month") or db.today_local()[:7]
+
+
+@app.get("/api/summary/day")
+def api_day_summary():
+    day = request.args.get("date") or _today()
+    return jsonify(db.get_day_detail(_db_path(), day))
 
 
 @app.get("/api/summary/month")

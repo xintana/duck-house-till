@@ -139,11 +139,13 @@ def init_db(db_path: str | Path) -> None:
 
 # ---- reads -----------------------------------------------------------------
 
-def get_menu(db_path: str | Path) -> list[dict]:
+def get_menu(db_path: str | Path, include_inactive: bool = False) -> list[dict]:
     with connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT * FROM menu_items WHERE active = 1 ORDER BY sort"
-        ).fetchall()
+        sql = "SELECT * FROM menu_items"
+        if not include_inactive:
+            sql += " WHERE active = 1"
+        sql += " ORDER BY sort"
+        rows = conn.execute(sql).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -187,6 +189,62 @@ def get_day_summary(db_path: str | Path, day: str) -> dict:
         "orders": row["orders"],
         "revenue": row["revenue"],
         "by_payment": by_pm,
+    }
+
+
+def get_day_detail(db_path: str | Path, day: str) -> dict:
+    """Sales detail for a single 'YYYY-MM-DD': totals, top-selling items, and
+    an hour-of-day breakdown (so the caller can find the busiest hour)."""
+    with connect(db_path) as conn:
+        totals = conn.execute(
+            "SELECT COUNT(*) AS orders, COALESCE(SUM(total), 0) AS revenue "
+            "FROM orders WHERE sale_date = ?",
+            (day,),
+        ).fetchone()
+        by_pm = {
+            r["payment_method"]: r["revenue"]
+            for r in conn.execute(
+                "SELECT payment_method, COALESCE(SUM(total),0) AS revenue "
+                "FROM orders WHERE sale_date = ? GROUP BY payment_method",
+                (day,),
+            ).fetchall()
+        }
+        by_hour_rows = {
+            int(r["hour"]): {"orders": r["orders"], "revenue": r["revenue"]}
+            for r in conn.execute(
+                "SELECT substr(created_at, 12, 2) AS hour, COUNT(*) AS orders, "
+                "COALESCE(SUM(total),0) AS revenue FROM orders "
+                "WHERE sale_date = ? GROUP BY hour",
+                (day,),
+            ).fetchall()
+        }
+        top_items = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT ol.name AS name, ol.temperature AS temperature, "
+                "SUM(ol.quantity) AS quantity, SUM(ol.line_total) AS revenue "
+                "FROM order_lines ol JOIN orders o ON o.id = ol.order_id "
+                "WHERE o.sale_date = ? "
+                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC LIMIT 10",
+                (day,),
+            ).fetchall()
+        ]
+
+    by_hour = []
+    for h in range(24):
+        rec = by_hour_rows.get(h, {"orders": 0, "revenue": 0})
+        by_hour.append({"hour": h, **rec})
+
+    best_hour = max(by_hour, key=lambda x: x["orders"]) if any(x["orders"] for x in by_hour) else None
+
+    return {
+        "date": day,
+        "orders": totals["orders"],
+        "revenue": totals["revenue"],
+        "by_payment": by_pm,
+        "top_items": top_items,
+        "by_hour": by_hour,
+        "best_hour": best_hour,
     }
 
 
@@ -319,6 +377,56 @@ def create_order(
 def delete_order(db_path: str | Path, order_id: int) -> None:
     with connect(db_path) as conn:
         conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+
+
+def create_menu_item(
+    db_path: str | Path,
+    category: str,
+    name: str,
+    temperature: str = "",
+    price: float | None = None,
+    is_custom: bool = False,
+) -> int:
+    category, name, temperature = category.strip(), name.strip(), temperature.strip()
+    if not category or not name:
+        raise ValueError("Category and name are required.")
+    if not is_custom and (price is None or float(price) < 0):
+        raise ValueError("Price must be >= 0.")
+    with connect(db_path) as conn:
+        next_sort = (conn.execute("SELECT COALESCE(MAX(sort), -1) + 1 FROM menu_items").fetchone()[0])
+        cur = conn.execute(
+            "INSERT INTO menu_items (category, name, temperature, price, is_custom, sort) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (category, name, temperature, None if is_custom else float(price), int(is_custom), next_sort),
+        )
+        return cur.lastrowid
+
+
+def update_menu_item(db_path: str | Path, item_id: int, **fields) -> None:
+    """Update any of category/name/temperature/price/active/is_custom for one menu item.
+    Only affects future orders — past order_lines store their own price snapshot."""
+    allowed = {"category", "name", "temperature", "price", "active", "is_custom"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return
+    if "price" in updates:
+        price = float(updates["price"])
+        if price < 0:
+            raise ValueError("Price must be >= 0.")
+        updates["price"] = price
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    with connect(db_path) as conn:
+        conn.execute(
+            f"UPDATE menu_items SET {set_clause} WHERE id = ?",
+            (*updates.values(), item_id),
+        )
+
+
+def delete_menu_item(db_path: str | Path, item_id: int) -> None:
+    """Hard delete — safe because order_lines snapshot name/price and hold no
+    foreign key to menu_items, so past orders are unaffected."""
+    with connect(db_path) as conn:
+        conn.execute("DELETE FROM menu_items WHERE id = ?", (item_id,))
 
 
 if __name__ == "__main__":
