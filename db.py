@@ -192,6 +192,18 @@ def get_day_summary(db_path: str | Path, day: str) -> dict:
     }
 
 
+def _split_glasses_desserts(items: list[dict]) -> tuple[float, float]:
+    """Split summed item quantities into (glasses, desserts).
+
+    A "glass" is any drink — an item served Hot or Iced. Anything with no
+    temperature (the Dessert button) is counted as a dessert. Whole-number
+    totals are returned as int so the UI shows "12" rather than "12.0"."""
+    drinks = sum(it["quantity"] for it in items if it["temperature"])
+    desserts = sum(it["quantity"] for it in items if not it["temperature"])
+    fix = lambda n: int(n) if float(n).is_integer() else n
+    return fix(drinks), fix(desserts)
+
+
 def get_day_detail(db_path: str | Path, day: str) -> dict:
     """Sales detail for a single 'YYYY-MM-DD': totals, top-selling items, and
     an hour-of-day breakdown (so the caller can find the busiest hour)."""
@@ -225,10 +237,12 @@ def get_day_detail(db_path: str | Path, day: str) -> dict:
                 "SUM(ol.quantity) AS quantity, SUM(ol.line_total) AS revenue "
                 "FROM order_lines ol JOIN orders o ON o.id = ol.order_id "
                 "WHERE o.sale_date = ? "
-                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC LIMIT 10",
+                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC",
                 (day,),
             ).fetchall()
         ]
+
+    drinks_qty, desserts_qty = _split_glasses_desserts(top_items)
 
     by_hour = []
     for h in range(24):
@@ -243,6 +257,8 @@ def get_day_detail(db_path: str | Path, day: str) -> dict:
         "revenue": totals["revenue"],
         "by_payment": by_pm,
         "top_items": top_items,
+        "drinks_qty": drinks_qty,
+        "desserts_qty": desserts_qty,
         "by_hour": by_hour,
         "best_hour": best_hour,
     }
@@ -284,10 +300,12 @@ def get_month_summary(db_path: str | Path, year_month: str) -> dict:
                 "SUM(ol.quantity) AS quantity, SUM(ol.line_total) AS revenue "
                 "FROM order_lines ol JOIN orders o ON o.id = ol.order_id "
                 "WHERE o.sale_date LIKE ? "
-                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC LIMIT 10",
+                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC",
                 (like,),
             ).fetchall()
         ]
+
+    drinks_qty, desserts_qty = _split_glasses_desserts(top_items)
 
     by_day = []
     for d in range(1, days_in_month + 1):
@@ -303,6 +321,8 @@ def get_month_summary(db_path: str | Path, year_month: str) -> dict:
         "revenue": totals["revenue"],
         "by_payment": by_pm,
         "top_items": top_items,
+        "drinks_qty": drinks_qty,
+        "desserts_qty": desserts_qty,
         "by_day": by_day,
         "best_day": best_day,
     }

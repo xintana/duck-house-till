@@ -271,7 +271,7 @@
     <div class="best-day" id="bestDay">–</div>
   </div>
   <div class="card-block">
-    <h3>Top-selling items</h3>
+    <h3 id="itemsTitle">Items sold</h3>
     <table class="top-items" id="topItems"></table>
   </div>
 </div>
@@ -598,9 +598,13 @@ async function loadSummary_() {
 function renderSummaryStats(s) {
   const cash = (s.by_payment && s.by_payment.Cash) || 0;
   const transfer = (s.by_payment && s.by_payment.Transfer) || 0;
+  const glasses = s.drinks_qty || 0;
+  const desserts = s.desserts_qty || 0;
   document.getElementById("summaryStats").innerHTML = `
     <div class="stat"><div class="label">Orders</div><div class="value">${s.orders}</div></div>
     <div class="stat"><div class="label">Total revenue</div><div class="value">${money(s.revenue)}</div></div>
+    <div class="stat"><div class="label">🥤 Glasses sold</div><div class="value">${glasses}</div></div>
+    <div class="stat"><div class="label">🍰 Desserts sold</div><div class="value">${desserts}</div></div>
     <div class="stat cash"><div class="label">💵 Cash</div><div class="value">${money(cash)}</div></div>
     <div class="stat transfer"><div class="label">🏦 Transfer</div><div class="value">${money(transfer)}</div></div>`;
 }

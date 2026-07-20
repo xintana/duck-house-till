@@ -24,12 +24,14 @@ def build_excel(summary: dict, orders: list[dict]) -> bytes:
     ws.append([])
     ws.append(["Orders", summary["orders"]])
     ws.append(["Revenue", summary["revenue"]])
+    ws.append(["Glasses sold", summary.get("drinks_qty", 0)])
+    ws.append(["Desserts sold", summary.get("desserts_qty", 0)])
     for pm, amt in summary["by_payment"].items():
         ws.append([pm, amt])
     if summary["best_day"]:
         ws.append(["Busiest day", summary["best_day"]["date"], summary["best_day"]["orders"], "orders"])
     ws.append([])
-    ws.append(["Top-selling items"])
+    ws.append(["Items sold"])
     ws[f"A{ws.max_row}"].font = bold
     ws.append(["Item", "Temperature", "Quantity sold", "Revenue"])
     for c in ws[ws.max_row]:
@@ -78,6 +80,8 @@ def build_pdf(summary: dict, orders: list[dict]) -> bytes:
 
     pdf.set_font("Helvetica", "", 11)
     pdf.cell(0, 8, f"Orders: {summary['orders']}    Revenue: THB {summary['revenue']:.2f}", ln=True)
+    pdf.cell(0, 7, f"Glasses sold: {summary.get('drinks_qty', 0):g}    "
+                   f"Desserts sold: {summary.get('desserts_qty', 0):g}", ln=True)
     for pm, amt in summary["by_payment"].items():
         pdf.cell(0, 7, f"  {pm}: THB {amt:.2f}", ln=True)
     if summary["best_day"]:
@@ -86,7 +90,7 @@ def build_pdf(summary: dict, orders: list[dict]) -> bytes:
 
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(0, 8, "Top-selling items", ln=True)
+    pdf.cell(0, 8, "Items sold", ln=True)
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(90, 7, "Item", border=1)
     pdf.cell(30, 7, "Temp", border=1)
