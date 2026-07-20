@@ -192,6 +192,24 @@ def get_day_summary(db_path: str | Path, day: str) -> dict:
     }
 
 
+def _with_unsold_menu_items(conn: sqlite3.Connection, items: list[dict]) -> list[dict]:
+    """Extend an items-sold list so every active, fixed-price menu item is
+    included, with quantity/revenue 0 if it wasn't ordered in the period.
+    Custom-price items (e.g. the "Dessert" button) are skipped here since
+    each sale gets its own typed name and already appears in `items` if sold."""
+    sold_keys = {(it["name"], it["temperature"]) for it in items}
+    menu_rows = conn.execute(
+        "SELECT name, temperature FROM menu_items "
+        "WHERE active = 1 AND is_custom = 0 ORDER BY sort"
+    ).fetchall()
+    for r in menu_rows:
+        key = (r["name"], r["temperature"])
+        if key not in sold_keys:
+            items.append({"name": r["name"], "temperature": r["temperature"], "quantity": 0, "revenue": 0})
+    items.sort(key=lambda it: -it["quantity"])
+    return items
+
+
 def _split_glasses_desserts(items: list[dict]) -> tuple[float, float]:
     """Split summed item quantities into (glasses, desserts).
 
@@ -241,6 +259,7 @@ def get_day_detail(db_path: str | Path, day: str) -> dict:
                 (day,),
             ).fetchall()
         ]
+        top_items = _with_unsold_menu_items(conn, top_items)
 
     drinks_qty, desserts_qty = _split_glasses_desserts(top_items)
 
@@ -304,6 +323,7 @@ def get_month_summary(db_path: str | Path, year_month: str) -> dict:
                 (like,),
             ).fetchall()
         ]
+        top_items = _with_unsold_menu_items(conn, top_items)
 
     drinks_qty, desserts_qty = _split_glasses_desserts(top_items)
 
