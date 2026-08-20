@@ -17,6 +17,7 @@
     --iced: #2f8fb0;
     --ok: #2e7d4f;
     --danger: #c0392b;
+    --hold: #c98a1e;
     --shadow: 0 2px 8px rgba(70,50,20,.10);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -32,6 +33,14 @@
   header h1 { font-size: 17px; margin: 0; font-weight: 700; }
   header .summary { font-size: 13px; text-align: right; line-height: 1.3; opacity: .95; }
   header .summary b { font-size: 16px; }
+  .head-right { display: flex; align-items: center; gap: 10px; }
+  /* On a phone the hold shelf stacks below the whole menu grid, so this pill
+     keeps waiting bills visible (and reachable) from anywhere on the page. */
+  .held-pill {
+    background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.45);
+    font: inherit; font-size: 14px; font-weight: 800; padding: 6px 12px;
+    border-radius: 999px; cursor: pointer; white-space: nowrap;
+  }
 
   /* tabs */
   .tabs { display: flex; background: var(--brand-dark); }
@@ -109,6 +118,43 @@
   .btn-save { background: var(--ok); color: #fff; }
   .btn-save:disabled { background: #b8c6bd; cursor: not-allowed; }
   .btn-clear { flex: 0 0 auto; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+  .btn-hold { flex: 0 0 auto; background: #fdf0dd; color: var(--brand-dark); border: 1px solid #f0d9b6; }
+  .btn-hold:disabled { background: var(--bg); color: #c4bbae; border-color: var(--line); cursor: not-allowed; }
+
+  /* held (parked) bills */
+  .held-shelf {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow); margin-bottom: 12px; overflow: hidden;
+  }
+  .held-head {
+    padding: 11px 14px; border-bottom: 1px solid var(--line); font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .held-count {
+    background: var(--hold); color: #fff; font-size: 12px; font-weight: 800;
+    padding: 1px 9px; border-radius: 999px;
+  }
+  .held-list { max-height: 40vh; overflow-y: auto; }
+  .held-item { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .held-item:last-child { border-bottom: none; }
+  .held-item.is-open { background: #fdf7ee; box-shadow: inset 3px 0 0 var(--hold); }
+  .held-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .held-label { font-weight: 700; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .held-total { font-weight: 800; color: var(--brand-dark); white-space: nowrap; }
+  .held-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .held-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .held-actions button {
+    padding: 10px 12px; min-height: 42px; border-radius: 9px; font-size: 14px;
+    font-weight: 700; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+  }
+  .held-actions .resume { flex: 1; background: var(--hold); color: #fff; border-color: var(--hold); }
+  .held-actions .discard { background: #fbeaea; color: var(--danger); border-color: #f0cccc; }
+  .resumed-tag {
+    font-size: 12px; font-weight: 700; color: var(--brand-dark); background: #fdf0dd;
+    border: 1px solid #f0d9b6; padding: 2px 9px; border-radius: 999px;
+  }
+  .order-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
   /* orders / history view */
   .history { max-width: 760px; margin: 0 auto; padding: 14px; }
@@ -148,6 +194,9 @@
   .monthbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
   .monthbar button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-size: 18px; font-weight: 700; cursor: pointer; }
   .monthbar input[type=month] { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: var(--card); }
+  .yearbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .yearbar button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-size: 18px; font-weight: 700; cursor: pointer; }
+  .yearbar .year-label { flex: 1; text-align: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-weight: 800; font-size: 17px; letter-spacing: .5px; }
   .export-row { display: flex; gap: 8px; }
   .export-row button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); font-weight: 700; cursor: pointer; }
   .card-block { background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 14px; margin-top: 14px; }
@@ -193,7 +242,11 @@
 <body>
 <header>
   <h1>🦆 Duck House Cafe</h1>
-  <div class="summary" id="summary">Today<br><b>–</b></div>
+  <div class="head-right">
+    <button class="held-pill hidden" id="heldPill" onclick="jumpToHeld()"
+            title="Bills on hold">⏸ <span id="heldPillCount">0</span></button>
+    <div class="summary" id="summary">Today<br><b>–</b></div>
+  </div>
 </header>
 <nav class="tabs">
   <button id="tab-new" class="active" onclick="showView('new')">🧾 New order</button>
@@ -209,8 +262,15 @@
     <div class="grid" id="grid"></div>
   </div>
   <div class="order-col">
+    <div class="held-shelf hidden" id="heldShelf">
+      <div class="held-head">⏸ On hold <span class="held-count" id="heldCount">0</span></div>
+      <div class="held-list" id="heldList"></div>
+    </div>
     <div class="order-card">
-      <div class="order-head">Current order</div>
+      <div class="order-head">
+        <span id="orderHeadTitle">Current order</span>
+        <span class="resumed-tag hidden" id="resumedTag"></span>
+      </div>
       <div class="lines" id="lines"><div class="empty">Tap a drink to start an order</div></div>
       <div class="order-foot">
         <div class="total-row"><span>Total</span><span class="big" id="total">฿0</span></div>
@@ -221,6 +281,7 @@
         <textarea id="comment" placeholder="Comment (optional) — e.g. less sweet, table 3"></textarea>
         <div class="actions">
           <button class="btn btn-save" id="save" disabled>Save order</button>
+          <button class="btn btn-hold" id="hold" disabled>⏸ Hold</button>
           <button class="btn btn-clear" id="clear">Clear</button>
         </div>
       </div>
@@ -245,6 +306,7 @@
   <div class="chips" id="summaryPeriodChips">
     <button class="chip active" data-period="day">Daily</button>
     <button class="chip" data-period="month">Monthly</button>
+    <button class="chip" data-period="year">Yearly</button>
   </div>
   <div class="datebar" id="summaryDayBar" style="margin-top:10px;">
     <button onclick="shiftSummaryDate(-1)" aria-label="Previous day">‹</button>
@@ -256,6 +318,11 @@
     <button onclick="shiftMonth(-1)" aria-label="Previous month">‹</button>
     <input type="month" id="summaryMonth">
     <button onclick="shiftMonth(1)" aria-label="Next month">›</button>
+  </div>
+  <div class="yearbar hidden" id="summaryYearBar">
+    <button onclick="shiftYear(-1)" aria-label="Previous year">‹</button>
+    <div class="year-label" id="summaryYear">–</div>
+    <button onclick="shiftYear(1)" aria-label="Next year">›</button>
   </div>
   <div class="stats" id="summaryStats"></div>
   <div class="export-row">
@@ -307,6 +374,8 @@ const todayStr = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD loc
 let MENU = [];
 let order = [];           // {key, name, temperature, unit_price, qty}
 let payment = "Cash";
+let HELD = [];            // bills parked on the shelf, oldest first
+let resumedHeldId = null; // the held bill currently loaded into `order`, if any
 
 /* ---------- view switching ---------- */
 function showView(v) {
@@ -318,6 +387,9 @@ function showView(v) {
   document.getElementById("tab-orders").classList.toggle("active", v === "orders");
   document.getElementById("tab-summary").classList.toggle("active", v === "summary");
   document.getElementById("tab-menu").classList.toggle("active", v === "menu");
+  // Refresh the shelf on the way in — a bill may have been held from the phone
+  // while this screen sat on another tab.
+  if (v === "new") loadHeld();
   if (v === "orders") loadHistory();
   if (v === "summary") loadSummary_();
   if (v === "menu") loadMenuAdmin();
@@ -409,17 +481,40 @@ function renderOrder() {
   const total = order.reduce((s, o) => s + o.unit_price * o.qty, 0);
   document.getElementById("total").textContent = money(total);
   document.getElementById("save").disabled = order.length === 0;
+  document.getElementById("hold").disabled = order.length === 0;
+  renderResumedTag();
 }
+/* Shows which parked bill (if any) is loaded, so the cashier can tell a
+   resumed bill apart from a fresh one at a glance. */
+function renderResumedTag() {
+  const tag = document.getElementById("resumedTag");
+  const i = HELD.findIndex(h => h.id === resumedHeldId);
+  tag.classList.toggle("hidden", i < 0);
+  if (i >= 0) tag.textContent = "⏸ " + heldLabel(HELD[i], i);
+}
+/* Unnamed bills fall back to their position on the shelf, so the tag and the
+   shelf always call the same bill by the same name. */
+function heldLabel(h, i) { return h.label || "Bill #" + (i + 1); }
 
+function setPayment(pm) {
+  payment = pm;
+  document.querySelectorAll("#pay button")
+    .forEach(x => x.classList.toggle("sel", x.dataset.pm === pm));
+}
 document.getElementById("pay").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
-  payment = b.dataset.pm;
-  document.querySelectorAll("#pay button").forEach(x => x.classList.remove("sel"));
-  b.classList.add("sel");
+  setPayment(b.dataset.pm);
 };
 document.getElementById("clear").onclick = () => {
-  if (order.length && !confirm("Clear this order?")) return;
-  order = []; document.getElementById("comment").value = ""; renderOrder();
+  // Clearing a resumed bill only empties the working basket — the parked copy
+  // stays on the shelf, so a stray tap can never lose a waiting customer.
+  const msg = resumedHeldId
+    ? "Clear the screen? This bill stays on hold — you can resume it again."
+    : "Clear this order?";
+  if (order.length && !confirm(msg)) return;
+  order = []; resumedHeldId = null;
+  document.getElementById("comment").value = "";
+  renderOrder(); renderHeld();
 };
 document.getElementById("save").onclick = async () => {
   const btn = document.getElementById("save");
@@ -429,6 +524,9 @@ document.getElementById("save").onclick = async () => {
                              quantity: o.qty, unit_price: o.unit_price })),
     payment_method: payment,
     comment: document.getElementById("comment").value,
+    // Tells the server to take this bill off the hold shelf as it books the
+    // sale, so it can't be resumed (and charged) a second time.
+    held_id: resumedHeldId,
   };
   try {
     const res = await fetch("/api/orders", {
@@ -437,8 +535,10 @@ document.getElementById("save").onclick = async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Save failed");
-    order = []; document.getElementById("comment").value = "";
-    renderOrder();
+    order = []; resumedHeldId = null;
+    document.getElementById("comment").value = "";
+    if (data.held) HELD = data.held;
+    renderOrder(); renderHeld();
     updateSummary(data.summary);
     toast("Order saved ✓");
   } catch (err) {
@@ -446,6 +546,154 @@ document.getElementById("save").onclick = async () => {
     btn.disabled = false;
   }
 };
+
+/* ---------- held (parked) bills ----------
+   A held bill lives on the server, so it survives a refresh, a flat phone
+   battery, or the cashier moving between the laptop and their phone. It is not
+   a sale until it is resumed and saved. */
+async function loadHeld() {
+  try {
+    HELD = await (await fetch("/api/held")).json();
+  } catch (err) {
+    return; // offline: keep showing whatever was last loaded
+  }
+  renderHeld();
+}
+function heldWhenText(iso) {
+  const clock = (iso || "").slice(11, 16);
+  const day = (iso || "").slice(0, 10);
+  if (day && day !== todayStr()) {
+    const d = new Date(day + "T00:00:00");
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " · " + clock;
+  }
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  // A phone set to another timezone would make "ago" nonsense — fall back to
+  // the plain clock time whenever the gap looks implausible.
+  if (!(mins >= 0) || mins > 720) return clock;
+  if (mins < 1) return clock + " · just now";
+  if (mins < 60) return `${clock} · ${mins} min ago`;
+  return `${clock} · ${Math.floor(mins / 60)} h ago`;
+}
+function heldItemsText(lines) {
+  const parts = lines.map(l => `${l.quantity} × ${l.name}`);
+  if (parts.length <= 2) return parts.join(", ");
+  return parts.slice(0, 2).join(", ") + ` +${parts.length - 2} more`;
+}
+function jumpToHeld() {
+  showView("new");
+  // Instant, not smooth: smooth scrolling is a no-op in some browsers, and a
+  // button that appears to do nothing is worse than an abrupt jump.
+  document.getElementById("heldShelf").scrollIntoView({ block: "center" });
+}
+function renderHeld() {
+  const shelf = document.getElementById("heldShelf");
+  shelf.classList.toggle("hidden", HELD.length === 0);
+  document.getElementById("heldCount").textContent = HELD.length;
+  document.getElementById("heldPill").classList.toggle("hidden", HELD.length === 0);
+  document.getElementById("heldPillCount").textContent = HELD.length;
+  const box = document.getElementById("heldList");
+  box.innerHTML = "";
+  HELD.forEach((h, i) => {
+    const div = document.createElement("div");
+    div.className = "held-item" + (h.id === resumedHeldId ? " is-open" : "");
+    const note = h.comment ? `<div class="held-meta">“${h.comment}”</div>` : "";
+    div.innerHTML = `
+      <div class="held-top">
+        <span class="held-label">${heldLabel(h, i)}</span>
+        <span class="held-total">${money(h.total)}</span>
+      </div>
+      <div class="held-meta">${heldItemsText(h.lines)}</div>
+      <div class="held-meta">🕑 ${heldWhenText(h.created_at)}</div>
+      ${note}
+      <div class="held-actions">
+        <button class="resume">▶ Resume</button>
+        <button class="discard">🗑 Discard</button>
+      </div>`;
+    div.querySelector(".resume").onclick = () => resumeHeld(h.id);
+    div.querySelector(".discard").onclick = () => discardHeld(h.id);
+    box.appendChild(div);
+  });
+  renderResumedTag();
+}
+function currentPayload(label) {
+  return {
+    lines: order.map(o => ({ name: o.name, temperature: o.temperature,
+                             quantity: o.qty, unit_price: o.unit_price })),
+    payment_method: payment,
+    comment: document.getElementById("comment").value,
+    label: label,
+  };
+}
+/* Park the basket on screen. Returns true if it made it to the shelf. */
+async function holdCurrent(label) {
+  if (!order.length) return false;
+  if (label === undefined) {
+    const suggested = resumedHeldId
+      ? (HELD.find(h => h.id === resumedHeldId) || {}).label || ""
+      : "Bill " + (HELD.length + 1);
+    label = prompt("Hold this bill as… (name, table, anything)", suggested);
+    if (label === null) return false; // cancelled
+  }
+  // Re-holding a resumed bill updates it in place, so one customer never ends
+  // up occupying two slots on the shelf.
+  const existing = resumedHeldId;
+  const body = JSON.stringify(currentPayload(label));
+  const send = (url, method) => fetch(url, {
+    method, headers: { "Content-Type": "application/json" }, body,
+  });
+  try {
+    let res = existing ? await send("/api/held/" + existing, "PUT")
+                       : await send("/api/held", "POST");
+    // The bill was discarded elsewhere (e.g. from the phone) while it sat open
+    // here — park it as a new one rather than leaving the cashier stuck.
+    if (res.status === 404) res = await send("/api/held", "POST");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not hold this bill");
+    HELD = data.held;
+    order = []; resumedHeldId = null;
+    document.getElementById("comment").value = "";
+    renderOrder(); renderHeld();
+    toast("Bill on hold ⏸");
+    return true;
+  } catch (err) {
+    alert("Could not hold this bill: " + err.message);
+    return false;
+  }
+}
+document.getElementById("hold").onclick = () => holdCurrent();
+
+async function resumeHeld(id) {
+  if (order.length) {
+    // Never silently bin what is on screen.
+    if (!confirm("You have items on screen. Put them on hold first, then open this bill?")) return;
+    if (!await holdCurrent()) return;
+  }
+  await loadHeld();
+  const h = HELD.find(x => x.id === id);
+  if (!h) { toast("That bill is no longer on hold"); return; }
+  order = h.lines.map(l => ({
+    key: `${l.name}|${l.temperature}|${l.unit_price}`,
+    name: l.name, temperature: l.temperature,
+    unit_price: l.unit_price, qty: l.quantity,
+  }));
+  resumedHeldId = h.id;
+  document.getElementById("comment").value = h.comment || "";
+  if (h.payment_method === "Cash" || h.payment_method === "Transfer") setPayment(h.payment_method);
+  renderOrder(); renderHeld();
+  showView("new");
+  toast("Resumed " + (h.label || "held bill"));
+}
+async function discardHeld(id) {
+  const i = HELD.findIndex(x => x.id === id);
+  const name = i >= 0 ? heldLabel(HELD[i], i) : "this held bill";
+  if (!confirm(`Discard "${name}"? It will not be recorded as a sale.`)) return;
+  const res = await fetch("/api/held/" + id, { method: "DELETE" });
+  const data = await res.json();
+  HELD = data.held || [];
+  if (resumedHeldId === id) { resumedHeldId = null; order = []; document.getElementById("comment").value = ""; }
+  renderOrder(); renderHeld();
+  toast("Held bill discarded");
+}
 
 /* ---------- today summary (header) ---------- */
 function updateSummary(s) {
@@ -529,7 +777,8 @@ async function deleteOrder(id) {
 }
 
 /* ---------- summary ---------- */
-let summaryPeriod = "day"; // "day" | "month"
+let summaryPeriod = "day"; // "day" | "month" | "year"
+let summaryYear = new Date().getFullYear();
 
 function currentMonthStr() {
   const d = new Date();
@@ -542,6 +791,7 @@ document.getElementById("summaryPeriodChips").onclick = e => {
   b.classList.add("active");
   document.getElementById("summaryDayBar").classList.toggle("hidden", summaryPeriod !== "day");
   document.getElementById("summaryMonthBar").classList.toggle("hidden", summaryPeriod !== "month");
+  document.getElementById("summaryYearBar").classList.toggle("hidden", summaryPeriod !== "year");
   loadSummary_();
 };
 function shiftSummaryDate(days) {
@@ -562,6 +812,10 @@ function shiftMonth(delta) {
   inp.value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
   loadSummary_();
 }
+function shiftYear(delta) {
+  summaryYear += delta;
+  loadSummary_();
+}
 function loadSummaryMonth() { loadSummary_(); }
 async function loadSummary_() {
   const dateInp = document.getElementById("summaryDate");
@@ -569,18 +823,19 @@ async function loadSummary_() {
   if (!dateInp.value) dateInp.value = todayStr();
   if (!monthInp.value) monthInp.value = currentMonthStr();
 
-  let s, exportMonth;
+  let s, exportQuery;
   if (summaryPeriod === "day") {
     const day = dateInp.value;
-    exportMonth = day.slice(0, 7);
+    // A single day has no export of its own; fall back to its containing month.
+    exportQuery = "month=" + day.slice(0, 7);
     s = await (await fetch("/api/summary/day?date=" + day)).json();
     document.getElementById("chartTitle").textContent = "Orders by hour";
     document.getElementById("bestTitle").textContent = "Busiest hour";
     renderChart(s.by_hour.map(h => ({ label: String(h.hour), orders: h.orders })));
-    renderBestPeriod(s.best_hour, h => `${String(h.hour).padStart(2, "0")}:00–${String(h.hour).padStart(2, "0")}:59`, "hour");
-  } else {
+    renderBestPeriod(s.best_hour, h => `${String(h.hour).padStart(2, "0")}:00–${String(h.hour).padStart(2, "0")}:59`);
+  } else if (summaryPeriod === "month") {
     const month = monthInp.value;
-    exportMonth = month;
+    exportQuery = "month=" + month;
     s = await (await fetch("/api/summary/month?month=" + month)).json();
     document.getElementById("chartTitle").textContent = "Orders by day";
     document.getElementById("bestTitle").textContent = "Busiest day";
@@ -588,27 +843,43 @@ async function loadSummary_() {
     renderBestPeriod(s.best_day, d => {
       const dt = new Date(d.date + "T00:00:00");
       return dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
-    }, "day");
+    });
+  } else {
+    document.getElementById("summaryYear").textContent = summaryYear;
+    exportQuery = "year=" + summaryYear;
+    s = await (await fetch("/api/summary/year?year=" + summaryYear)).json();
+    document.getElementById("chartTitle").textContent = "Orders by month";
+    document.getElementById("bestTitle").textContent = "Busiest month";
+    renderChart(s.by_month.map(m => ({ label: m.name, orders: m.orders })));
+    renderBestPeriod(s.best_month, m => {
+      const dt = new Date(m.month + "-01T00:00:00");
+      return dt.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    });
   }
   renderSummaryStats(s);
   renderTopItems(s.top_items);
-  document.getElementById("exportExcel").onclick = () => window.open("/api/export/excel?month=" + exportMonth, "_blank");
-  document.getElementById("exportPdf").onclick = () => window.open("/api/export/pdf?month=" + exportMonth, "_blank");
+  document.getElementById("exportExcel").onclick = () => window.open("/api/export/excel?" + exportQuery, "_blank");
+  document.getElementById("exportPdf").onclick = () => window.open("/api/export/pdf?" + exportQuery, "_blank");
 }
 function renderSummaryStats(s) {
   const cash = (s.by_payment && s.by_payment.Cash) || 0;
   const transfer = (s.by_payment && s.by_payment.Transfer) || 0;
   const glasses = s.drinks_qty || 0;
   const desserts = s.desserts_qty || 0;
+  // Only the yearly summary carries these — a single day or month is too short
+  // a window for "average per day open" to say anything useful.
+  const yearOnly = s.trading_days === undefined ? "" : `
+    <div class="stat"><div class="label">📅 Days open</div><div class="value">${s.trading_days}</div></div>
+    <div class="stat"><div class="label">📈 Avg / day open</div><div class="value">${money(s.avg_per_trading_day)}</div></div>`;
   document.getElementById("summaryStats").innerHTML = `
     <div class="stat"><div class="label">Orders</div><div class="value">${s.orders}</div></div>
     <div class="stat"><div class="label">Total revenue</div><div class="value">${money(s.revenue)}</div></div>
     <div class="stat"><div class="label">🥤 Glasses sold</div><div class="value">${glasses}</div></div>
     <div class="stat"><div class="label">🍰 Desserts sold</div><div class="value">${desserts}</div></div>
     <div class="stat cash"><div class="label">💵 Cash</div><div class="value">${money(cash)}</div></div>
-    <div class="stat transfer"><div class="label">🏦 Transfer</div><div class="value">${money(transfer)}</div></div>`;
+    <div class="stat transfer"><div class="label">🏦 Transfer</div><div class="value">${money(transfer)}</div></div>${yearOnly}`;
 }
-function renderBestPeriod(best, labelFn, noun) {
+function renderBestPeriod(best, labelFn) {
   const el = document.getElementById("bestDay");
   if (!best) { el.textContent = "No orders recorded for this period yet."; return; }
   el.innerHTML = `<b>${labelFn(best)}</b> had the most orders — ${best.orders} orders, ${money(best.revenue)} revenue.`;
@@ -750,8 +1021,10 @@ function toast(msg) {
 document.getElementById("histDate").value = todayStr();
 document.getElementById("summaryDate").value = todayStr();
 document.getElementById("summaryMonth").value = currentMonthStr();
+document.getElementById("summaryYear").textContent = summaryYear;
 loadMenu();
 loadSummary();
+loadHeld();
 </script>
 </body>
 </html>

@@ -1,9 +1,10 @@
 """SQLite data layer for the Duck House Cafe order till.
 
-Three tables:
-  menu_items  — the drinks/desserts the cashier can tap (price built in)
-  orders      — one customer transaction (payment + comment + total)
-  order_lines — the individual drinks within an order
+Four tables:
+  menu_items   — the drinks/desserts the cashier can tap (price built in)
+  orders       — one customer transaction (payment + comment + total)
+  order_lines  — the individual drinks within an order
+  held_orders  — parked/unpaid baskets, not yet part of any sales figure
 
 The DB file path is resolved by config.py so it can live in a cloud folder.
 """
@@ -11,6 +12,7 @@ The DB file path is resolved by config.py so it can live in a cloud folder.
 from __future__ import annotations
 
 import calendar
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -60,6 +62,21 @@ CREATE TABLE IF NOT EXISTS order_lines (
     quantity    REAL    NOT NULL CHECK (quantity > 0),
     unit_price  REAL    NOT NULL CHECK (unit_price >= 0),
     line_total  REAL    NOT NULL
+);
+
+-- A basket the cashier parked to serve the next customer first. It is NOT a
+-- sale: nothing here reaches orders/order_lines (or any total) until the
+-- cashier resumes it and saves. Lines are kept as a JSON snapshot because a
+-- held basket is short-lived scratch data that is never reported on.
+CREATE TABLE IF NOT EXISTS held_orders (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at     TEXT    NOT NULL,              -- ISO timestamp (local)
+    updated_at     TEXT    NOT NULL,              -- ISO timestamp (local)
+    label          TEXT    NOT NULL DEFAULT '',   -- e.g. customer name / 'table 3'
+    payment_method TEXT    NOT NULL DEFAULT '',
+    comment        TEXT    NOT NULL DEFAULT '',
+    lines_json     TEXT    NOT NULL,
+    total          REAL    NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_date ON orders (sale_date);
@@ -348,6 +365,104 @@ def get_month_summary(db_path: str | Path, year_month: str) -> dict:
     }
 
 
+def get_year_summary(db_path: str | Path, year: str) -> dict:
+    """Sales summary for a whole year ('YYYY'): totals, top-selling items, and
+    a per-month breakdown (so the caller can find the busiest month)."""
+    like = f"{year}%"
+
+    with connect(db_path) as conn:
+        totals = conn.execute(
+            "SELECT COUNT(*) AS orders, COALESCE(SUM(total), 0) AS revenue, "
+            "COUNT(DISTINCT sale_date) AS trading_days "
+            "FROM orders WHERE sale_date LIKE ?",
+            (like,),
+        ).fetchone()
+        by_pm = {
+            r["payment_method"]: r["revenue"]
+            for r in conn.execute(
+                "SELECT payment_method, COALESCE(SUM(total),0) AS revenue "
+                "FROM orders WHERE sale_date LIKE ? GROUP BY payment_method",
+                (like,),
+            ).fetchall()
+        }
+        by_month_rows = {
+            r["ym"]: {"orders": r["orders"], "revenue": r["revenue"]}
+            for r in conn.execute(
+                "SELECT substr(sale_date, 1, 7) AS ym, COUNT(*) AS orders, "
+                "COALESCE(SUM(total),0) AS revenue FROM orders "
+                "WHERE sale_date LIKE ? GROUP BY ym",
+                (like,),
+            ).fetchall()
+        }
+        top_items = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT ol.name AS name, ol.temperature AS temperature, "
+                "SUM(ol.quantity) AS quantity, SUM(ol.line_total) AS revenue "
+                "FROM order_lines ol JOIN orders o ON o.id = ol.order_id "
+                "WHERE o.sale_date LIKE ? "
+                "GROUP BY ol.name, ol.temperature ORDER BY quantity DESC",
+                (like,),
+            ).fetchall()
+        ]
+        top_items = _with_unsold_menu_items(conn, top_items)
+
+    drinks_qty, desserts_qty = _split_glasses_desserts(top_items)
+
+    by_month = []
+    for m in range(1, 13):
+        ym = f"{year}-{m:02d}"
+        rec = by_month_rows.get(ym, {"orders": 0, "revenue": 0})
+        by_month.append({"month": ym, "n": m, "name": calendar.month_abbr[m], **rec})
+
+    best_month = (
+        max(by_month, key=lambda x: x["orders"])
+        if any(x["orders"] for x in by_month)
+        else None
+    )
+
+    # Averaged over days the cafe actually took money, not all 365 — a shop
+    # that opened in October should not look like it averaged near-zero.
+    trading_days = totals["trading_days"]
+    avg_per_trading_day = round(totals["revenue"] / trading_days, 2) if trading_days else 0
+
+    return {
+        "year": year,
+        "orders": totals["orders"],
+        "revenue": totals["revenue"],
+        "by_payment": by_pm,
+        "top_items": top_items,
+        "drinks_qty": drinks_qty,
+        "desserts_qty": desserts_qty,
+        "by_month": by_month,
+        "best_month": best_month,
+        "trading_days": trading_days,
+        "avg_per_trading_day": avg_per_trading_day,
+    }
+
+
+def get_orders_for_year(db_path: str | Path, year: str) -> list[dict]:
+    """All orders (with lines) for a given 'YYYY', oldest first — used for exports."""
+    like = f"{year}%"
+    with connect(db_path) as conn:
+        orders = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM orders WHERE sale_date LIKE ? ORDER BY sale_date, id",
+                (like,),
+            ).fetchall()
+        ]
+        for o in orders:
+            o["lines"] = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM order_lines WHERE order_id = ? ORDER BY id",
+                    (o["id"],),
+                ).fetchall()
+            ]
+        return orders
+
+
 def get_orders_for_month(db_path: str | Path, year_month: str) -> list[dict]:
     """All orders (with lines) for a given 'YYYY-MM', oldest first — used for exports."""
     like = f"{year_month}%"
@@ -372,19 +487,11 @@ def get_orders_for_month(db_path: str | Path, year_month: str) -> list[dict]:
 
 # ---- writes ----------------------------------------------------------------
 
-def create_order(
-    db_path: str | Path,
-    lines: list[dict],
-    payment_method: str,
-    comment: str = "",
-) -> int:
-    """Save one order. `lines` items need: name, temperature, quantity, unit_price."""
+def _prepare_lines(lines: list[dict]) -> tuple[list[tuple], float]:
+    """Validate/price a basket. Returns (rows, total) where each row is
+    (name, temperature, quantity, unit_price, line_total)."""
     if not lines:
         raise ValueError("An order needs at least one item.")
-    if payment_method not in PAYMENT_METHODS:
-        raise ValueError(f"Unknown payment method: {payment_method!r}")
-
-    now = now_local()
     prepared, total = [], 0.0
     for ln in lines:
         qty = float(ln["quantity"])
@@ -396,7 +503,21 @@ def create_order(
         prepared.append(
             (ln["name"], ln.get("temperature", ""), qty, unit, line_total)
         )
-    total = round(total, 2)
+    return prepared, round(total, 2)
+
+
+def create_order(
+    db_path: str | Path,
+    lines: list[dict],
+    payment_method: str,
+    comment: str = "",
+) -> int:
+    """Save one order. `lines` items need: name, temperature, quantity, unit_price."""
+    if payment_method not in PAYMENT_METHODS:
+        raise ValueError(f"Unknown payment method: {payment_method!r}")
+
+    now = now_local()
+    prepared, total = _prepare_lines(lines)
 
     with connect(db_path) as conn:
         cur = conn.execute(
@@ -417,6 +538,94 @@ def create_order(
 def delete_order(db_path: str | Path, order_id: int) -> None:
     with connect(db_path) as conn:
         conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+
+
+# ---- held (parked) orders --------------------------------------------------
+# These are baskets the cashier set aside to serve someone else first. They are
+# deliberately invisible to every sales figure — a held bill only becomes a sale
+# when it is resumed and saved through create_order().
+
+def _held_row_to_dict(row: sqlite3.Row) -> dict:
+    held = dict(row)
+    held["lines"] = json.loads(held.pop("lines_json"))
+    return held
+
+
+def hold_order(
+    db_path: str | Path,
+    lines: list[dict],
+    payment_method: str = "",
+    comment: str = "",
+    label: str = "",
+) -> int:
+    """Park a basket for later. Payment method is optional here — the cashier
+    often does not know how the customer will pay until they come back."""
+    prepared, total = _prepare_lines(lines)
+    now = now_local().isoformat(timespec="seconds")
+    payload = json.dumps(
+        [
+            {"name": n, "temperature": t, "quantity": q, "unit_price": u, "line_total": lt}
+            for (n, t, q, u, lt) in prepared
+        ]
+    )
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO held_orders (created_at, updated_at, label, "
+            "payment_method, comment, lines_json, total) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (now, now, label.strip(), payment_method, comment.strip(), payload, total),
+        )
+        return cur.lastrowid
+
+
+def update_held_order(
+    db_path: str | Path,
+    held_id: int,
+    lines: list[dict],
+    payment_method: str = "",
+    comment: str = "",
+    label: str = "",
+) -> None:
+    """Re-park a basket that was resumed and then held again, keeping its id so
+    the same bill cannot end up on the shelf twice."""
+    prepared, total = _prepare_lines(lines)
+    payload = json.dumps(
+        [
+            {"name": n, "temperature": t, "quantity": q, "unit_price": u, "line_total": lt}
+            for (n, t, q, u, lt) in prepared
+        ]
+    )
+    with connect(db_path) as conn:
+        conn.execute(
+            "UPDATE held_orders SET updated_at = ?, label = ?, payment_method = ?, "
+            "comment = ?, lines_json = ?, total = ? WHERE id = ?",
+            (
+                now_local().isoformat(timespec="seconds"),
+                label.strip(),
+                payment_method,
+                comment.strip(),
+                payload,
+                total,
+                held_id,
+            ),
+        )
+
+
+def get_held_orders(db_path: str | Path) -> list[dict]:
+    """All parked baskets, oldest first so the longest-waiting customer is top."""
+    with connect(db_path) as conn:
+        rows = conn.execute("SELECT * FROM held_orders ORDER BY id").fetchall()
+        return [_held_row_to_dict(r) for r in rows]
+
+
+def get_held_order(db_path: str | Path, held_id: int) -> dict | None:
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT * FROM held_orders WHERE id = ?", (held_id,)).fetchone()
+        return _held_row_to_dict(row) if row else None
+
+
+def delete_held_order(db_path: str | Path, held_id: int) -> None:
+    with connect(db_path) as conn:
+        conn.execute("DELETE FROM held_orders WHERE id = ?", (held_id,))
 
 
 def create_menu_item(
@@ -487,4 +696,15 @@ if __name__ == "__main__":
     )
     print("Created order", oid)
     print("Summary:", get_day_summary(tmp, date.today().strftime("%Y-%m-%d")))
+
+    hid = hold_order(
+        tmp,
+        [{"name": "Mocha (Hot)", "temperature": "Hot", "quantity": 1, "unit_price": 60}],
+        label="table 5",
+    )
+    print("Held bill", hid, "->", get_held_orders(tmp))
+    print("Held bills do not touch sales:",
+          get_day_summary(tmp, date.today().strftime("%Y-%m-%d")))
+    delete_held_order(tmp, hid)
+    print("Held after discard:", len(get_held_orders(tmp)))
     tmp.unlink(missing_ok=True)

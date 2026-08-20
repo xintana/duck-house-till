@@ -108,7 +108,17 @@ def api_create_order():
         )
     except (ValueError, KeyError, TypeError) as e:
         return jsonify({"error": str(e)}), 400
-    return jsonify({"id": order_id, "summary": db.get_day_summary(_db_path(), _today())})
+    # If this basket came off the hold shelf, clear it here rather than in a
+    # second request — a dropped follow-up call would leave the bill parked and
+    # risk it being charged to the customer twice.
+    held_id = data.get("held_id")
+    if held_id is not None:
+        db.delete_held_order(_db_path(), int(held_id))
+    return jsonify({
+        "id": order_id,
+        "summary": db.get_day_summary(_db_path(), _today()),
+        "held": db.get_held_orders(_db_path()),
+    })
 
 
 @app.delete("/api/orders/<int:order_id>")
@@ -117,8 +127,76 @@ def api_delete_order(order_id: int):
     return jsonify({"ok": True, "summary": db.get_day_summary(_db_path(), _today())})
 
 
+# ---- held (parked) bills ---------------------------------------------------
+
+@app.get("/api/held")
+def api_held_orders():
+    return jsonify(db.get_held_orders(_db_path()))
+
+
+@app.post("/api/held")
+def api_hold_order():
+    """Park the current basket so the cashier can serve the next customer."""
+    data = request.get_json(silent=True) or {}
+    try:
+        held_id = db.hold_order(
+            _db_path(),
+            lines=data.get("lines", []),
+            payment_method=data.get("payment_method", ""),
+            comment=data.get("comment", ""),
+            label=data.get("label", ""),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"id": held_id, "held": db.get_held_orders(_db_path())})
+
+
+@app.put("/api/held/<int:held_id>")
+def api_update_held_order(held_id: int):
+    """Re-park a bill that was resumed and then held again."""
+    if db.get_held_order(_db_path(), held_id) is None:
+        return jsonify({"error": "That held bill no longer exists."}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        db.update_held_order(
+            _db_path(),
+            held_id,
+            lines=data.get("lines", []),
+            payment_method=data.get("payment_method", ""),
+            comment=data.get("comment", ""),
+            label=data.get("label", ""),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"id": held_id, "held": db.get_held_orders(_db_path())})
+
+
+@app.delete("/api/held/<int:held_id>")
+def api_delete_held_order(held_id: int):
+    db.delete_held_order(_db_path(), held_id)
+    return jsonify({"ok": True, "held": db.get_held_orders(_db_path())})
+
+
 def _month() -> str:
     return request.args.get("month") or db.today_local()[:7]
+
+
+def _year() -> str:
+    return request.args.get("year") or db.today_local()[:4]
+
+
+def _export_period() -> tuple[str, dict, list[dict]]:
+    """Resolve the requested export period into (file stem, summary, orders).
+
+    A `year` query param switches both exports to the whole-year report; with
+    no `year` they stay on the month, so existing links keep working.
+    """
+    path = _db_path()
+    if request.args.get("year"):
+        year = _year()
+        return f"sales-{year}", db.get_year_summary(path, year), db.get_orders_for_year(path, year)
+    month = _month()
+    return f"sales-{month}", db.get_month_summary(path, month), db.get_orders_for_month(path, month)
 
 
 @app.get("/api/summary/day")
@@ -132,30 +210,31 @@ def api_month_summary():
     return jsonify(db.get_month_summary(_db_path(), _month()))
 
 
+@app.get("/api/summary/year")
+def api_year_summary():
+    return jsonify(db.get_year_summary(_db_path(), _year()))
+
+
 @app.get("/api/export/excel")
 def api_export_excel():
-    month = _month()
-    summary = db.get_month_summary(_db_path(), month)
-    orders = db.get_orders_for_month(_db_path(), month)
+    stem, summary, orders = _export_period()
     data = export.build_excel(summary, orders)
     return send_file(
         io.BytesIO(data),
         as_attachment=True,
-        download_name=f"sales-{month}.xlsx",
+        download_name=f"{stem}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
 @app.get("/api/export/pdf")
 def api_export_pdf():
-    month = _month()
-    summary = db.get_month_summary(_db_path(), month)
-    orders = db.get_orders_for_month(_db_path(), month)
+    stem, summary, orders = _export_period()
     data = export.build_pdf(summary, orders)
     return send_file(
         io.BytesIO(data),
         as_attachment=True,
-        download_name=f"sales-{month}.pdf",
+        download_name=f"{stem}.pdf",
         mimetype="application/pdf",
     )
 
