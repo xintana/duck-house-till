@@ -15,6 +15,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, render_template, send_file
 
 import config
+import cost
 import db
 import export
 
@@ -32,6 +33,7 @@ def _db_path() -> str:
         path = str(Path(__file__).with_name("sales.db"))
         config.set_db_path(path)
     db.init_db(path)
+    cost.init_db(path)
     return path
 
 
@@ -237,6 +239,144 @@ def api_export_pdf():
         download_name=f"{stem}.pdf",
         mimetype="application/pdf",
     )
+
+
+# ---- ingredient costs ------------------------------------------------------
+
+def _cost_period() -> str:
+    """The sale_date/buy_date prefix asked for: a day, a month, or a year."""
+    if request.args.get("date"):
+        return request.args["date"]
+    if request.args.get("year"):
+        return request.args["year"]
+    return request.args.get("month") or db.today_local()[:7]
+
+
+@app.get("/api/ingredients")
+def api_ingredients():
+    include_inactive = request.args.get("all") == "1"
+    return jsonify({
+        "units": {u: {"family": fam, "factor": f} for u, (fam, f) in cost.UNITS.items()},
+        "ingredients": cost.get_ingredients(_db_path(), include_inactive=include_inactive),
+    })
+
+
+@app.post("/api/ingredients")
+def api_create_ingredient():
+    data = request.get_json(silent=True) or {}
+    try:
+        ing_id = cost.create_ingredient(
+            _db_path(),
+            name=data.get("name", ""),
+            unit=data.get("unit", ""),
+            note=data.get("note", ""),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"id": ing_id})
+
+
+@app.patch("/api/ingredients/<int:ingredient_id>")
+def api_update_ingredient(ingredient_id: int):
+    data = request.get_json(silent=True) or {}
+    try:
+        cost.update_ingredient(_db_path(), ingredient_id, **data)
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/ingredients/<int:ingredient_id>")
+def api_delete_ingredient(ingredient_id: int):
+    cost.delete_ingredient(_db_path(), ingredient_id)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/ingredients/<int:ingredient_id>/usage")
+def api_ingredient_usage(ingredient_id: int):
+    """Which menu items use this ingredient, and how much each one takes."""
+    return jsonify({
+        "menu_items": cost.get_ingredient_usage(_db_path(), ingredient_id),
+        "purchases": cost.get_purchases(_db_path(), ingredient_id=ingredient_id, limit=20),
+    })
+
+
+@app.get("/api/purchases")
+def api_purchases():
+    ing = request.args.get("ingredient_id", type=int)
+    limit = request.args.get("limit", default=60, type=int)
+    return jsonify(cost.get_purchases(_db_path(), ingredient_id=ing, limit=limit))
+
+
+@app.post("/api/purchases")
+def api_add_purchase():
+    """Log one shopping trip: 'How much did we buy this time, and for how much?'"""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = cost.add_purchase(
+            _db_path(),
+            ingredient_id=int(data["ingredient_id"]),
+            packs=data.get("packs", 1),
+            pack_size=data["pack_size"],
+            pack_unit=data.get("pack_unit", ""),
+            total_price=data["total_price"],
+            buy_date=data.get("buy_date"),
+            note=data.get("note", ""),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(result)
+
+
+@app.delete("/api/purchases/<int:purchase_id>")
+def api_delete_purchase(purchase_id: int):
+    cost.delete_purchase(_db_path(), purchase_id)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/recipes/<int:menu_item_id>")
+def api_recipe(menu_item_id: int):
+    try:
+        return jsonify(cost.get_recipe(_db_path(), menu_item_id))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
+@app.post("/api/recipes/<int:menu_item_id>")
+def api_set_recipe_line(menu_item_id: int):
+    """Set how much of one ingredient goes into one serving of this item."""
+    data = request.get_json(silent=True) or {}
+    try:
+        cost.set_recipe_line(
+            _db_path(),
+            menu_item_id,
+            ingredient_id=int(data["ingredient_id"]),
+            amount=data["amount"],
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(cost.get_recipe(_db_path(), menu_item_id))
+
+
+@app.delete("/api/recipes/lines/<int:line_id>")
+def api_delete_recipe_line(line_id: int):
+    cost.delete_recipe_line(_db_path(), line_id)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/costs/menu")
+def api_menu_costs():
+    return jsonify(cost.get_menu_costs(_db_path()))
+
+
+@app.get("/api/costs/period")
+def api_period_cost():
+    """Ingredient cost of what was sold, and cash actually spent restocking."""
+    path, period = _db_path(), _cost_period()
+    return jsonify({
+        "sold": cost.get_period_cost(path, period),
+        "spend": cost.get_spend(path, period),
+    })
 
 
 def _lan_ip() -> str:

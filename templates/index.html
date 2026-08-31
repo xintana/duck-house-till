@@ -45,9 +45,11 @@
   /* tabs */
   .tabs { display: flex; background: var(--brand-dark); }
   .tabs button {
-    flex: 1; border: none; background: transparent; color: #f4e6d6; padding: 12px;
-    font-size: 15px; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent;
+    flex: 1; border: none; background: transparent; color: #f4e6d6; padding: 12px 4px;
+    font-size: 14px; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent;
+    white-space: nowrap;
   }
+  @media (max-width: 420px) { .tabs button { font-size: 12px; padding: 11px 2px; } }
   .tabs button.active { color: #fff; border-bottom-color: #fff; background: rgba(255,255,255,.08); }
 
   .layout { display: flex; gap: 14px; padding: 14px; max-width: 1100px; margin: 0 auto; }
@@ -224,6 +226,54 @@
   .mini-btn.save { background: #e3f3e9; color: var(--ok); border-color: #cdeada; }
   .mini-btn.danger { background: #fbeaea; color: var(--danger); border-color: #f0cccc; }
 
+  /* cost tab */
+  .cost-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; align-items: end; }
+  .fld { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); min-width: 0; }
+  .fld.wide { grid-column: 1 / -1; }
+  .fld input, .fld select {
+    padding: 10px; border: 1px solid var(--line); border-radius: 9px; font: inherit;
+    font-size: 15px; background: var(--card); color: var(--ink); width: 100%;
+  }
+  .calc-line {
+    margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg);
+    border: 1px dashed var(--line); font-size: 14px; color: var(--muted);
+  }
+  .calc-line b { color: var(--brand-dark); font-size: 16px; }
+  .calc-line .up { color: var(--danger); font-weight: 700; }
+  .calc-line .down { color: var(--ok); font-weight: 700; }
+  .muted-note { font-size: 12px; color: var(--muted); margin: -4px 0 10px; line-height: 1.45; }
+  .warn { background: #fdf3e3; border: 1px solid #f0d9b6; color: #8a6420;
+          padding: 9px 12px; border-radius: 10px; font-size: 13px; margin-top: 10px; }
+  .table-wrap { overflow-x: auto; }
+  table.dtable { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.dtable th, table.dtable td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.dtable th { font-size: 12px; color: var(--muted); font-weight: 700; }
+  table.dtable th.num, table.dtable td.num { text-align: right; }
+  table.dtable td.name { white-space: normal; min-width: 120px; }
+  table.dtable tr.dim td { color: var(--muted); }
+  table.dtable input[type=number] { width: 84px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+
+  .ing-card { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+  .ing-card.open { box-shadow: inset 3px 0 0 var(--brand); }
+  .ing-head { padding: 10px 12px; cursor: pointer; }
+  .ing-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .ing-name { font-weight: 700; font-size: 15px; min-width: 0; }
+  .ing-cost { font-weight: 800; color: var(--brand-dark); white-space: nowrap; }
+  .ing-cost.none { color: var(--muted); font-weight: 600; font-size: 13px; }
+  .ing-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .ing-detail { border-top: 1px solid var(--line); padding: 12px; background: #fffdf9; }
+  .ing-detail h4 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+  .ing-detail h4:first-child { margin-top: 0; }
+  .recipe-summary {
+    display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline;
+    padding: 10px 12px; border-radius: 10px; background: var(--bg); margin: 10px 0;
+  }
+  .recipe-summary .num { font-weight: 800; font-size: 18px; color: var(--brand-dark); }
+  .recipe-summary .lbl { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .recipe-summary .good { color: var(--ok); }
+  .recipe-summary .bad { color: var(--danger); }
+  .unit-tag { padding-bottom: 12px; font-weight: 700; color: var(--muted); font-size: 14px; }
+
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(80px);
     background: var(--ok); color: #fff; padding: 12px 20px; border-radius: 999px;
@@ -249,9 +299,10 @@
   </div>
 </header>
 <nav class="tabs">
-  <button id="tab-new" class="active" onclick="showView('new')">🧾 New order</button>
+  <button id="tab-new" class="active" onclick="showView('new')">🧾 Order</button>
   <button id="tab-orders" onclick="showView('orders')">📊 Orders</button>
   <button id="tab-summary" onclick="showView('summary')">📈 Summary</button>
+  <button id="tab-cost" onclick="showView('cost')">💰 Cost</button>
   <button id="tab-menu" onclick="showView('menu')">⚙️ Menu</button>
 </nav>
 
@@ -343,6 +394,124 @@
   </div>
 </div>
 
+<!-- COST VIEW -->
+<div id="view-cost" class="summary-view hidden">
+  <div class="chips" id="costSectionChips">
+    <button class="chip active" data-section="buy">🛒 Buy</button>
+    <button class="chip" data-section="ingredients">🥫 Ingredients</button>
+    <button class="chip" data-section="recipes">📖 Recipes</button>
+    <button class="chip" data-section="menucost">💰 Menu cost</button>
+  </div>
+
+  <!-- 1. what we bought this time -->
+  <div id="cost-buy" class="cost-section">
+    <div class="card-block">
+      <h3>How much did we buy this time?</h3>
+      <div class="muted-note">Enter it the way it was bought — 2 bags of 1 kg, 4 cartons of 2 L — and the price on the receipt. The cost per gram / ml / bottle is worked out for you.</div>
+      <div class="cost-form">
+        <label class="fld wide">Ingredient
+          <select id="buyIngredient"></select>
+        </label>
+        <label class="fld">Date bought
+          <input type="date" id="buyDate">
+        </label>
+        <label class="fld">How many packs
+          <input type="number" id="buyPacks" min="0" step="any" value="1">
+        </label>
+        <label class="fld">Size of each pack
+          <input type="number" id="buyPackSize" min="0" step="any" placeholder="e.g. 1">
+        </label>
+        <label class="fld">Unit
+          <select id="buyUnit"></select>
+        </label>
+        <label class="fld">Total price paid (฿)
+          <input type="number" id="buyPrice" min="0" step="any" placeholder="e.g. 900">
+        </label>
+        <label class="fld wide">Note — shop, brand, promotion (optional)
+          <input type="text" id="buyNote">
+        </label>
+      </div>
+      <div class="calc-line" id="buyPreview">Pick an ingredient, then fill in the amount and the price.</div>
+      <button class="btn btn-save" id="savePurchase" style="margin-top:10px;">＋ Save purchase</button>
+    </div>
+    <div class="card-block">
+      <h3>Recent purchases</h3>
+      <div class="table-wrap"><table class="dtable" id="purchaseTable"></table></div>
+    </div>
+  </div>
+
+  <!-- 2. what each ingredient costs + 3. which menus use it -->
+  <div id="cost-ingredients" class="cost-section hidden">
+    <div class="card-block">
+      <h3>What each ingredient costs</h3>
+      <div class="muted-note">The cost per unit is taken from the most recent purchase. Tap any ingredient to see which drinks it goes into and its full buying history.</div>
+      <div id="ingredientList"></div>
+    </div>
+    <div class="card-block">
+      <h3>Add an ingredient</h3>
+      <div class="cost-form">
+        <label class="fld wide">Name
+          <input type="text" id="newIngName" placeholder="e.g. ผงชาเขียว">
+        </label>
+        <label class="fld">Measured in
+          <select id="newIngUnit"></select>
+        </label>
+        <label class="fld">Note (optional)
+          <input type="text" id="newIngNote" placeholder="brand, shop…">
+        </label>
+      </div>
+      <button class="btn btn-save" id="addIngredient" style="margin-top:10px;">＋ Add ingredient</button>
+    </div>
+  </div>
+
+  <!-- 4. how much of each ingredient goes into one glass -->
+  <div id="cost-recipes" class="cost-section hidden">
+    <div class="card-block">
+      <h3>How much do we need to make one?</h3>
+      <div class="cost-form">
+        <label class="fld wide">Menu item
+          <select id="recipeItem"></select>
+        </label>
+      </div>
+      <div class="recipe-summary" id="recipeSummary"></div>
+      <div id="recipeWarn"></div>
+      <div class="table-wrap"><table class="dtable" id="recipeTable"></table></div>
+      <h3 style="margin-top:16px;">Add an ingredient to this recipe</h3>
+      <div class="cost-form">
+        <label class="fld wide">Ingredient
+          <select id="recipeIngredient"></select>
+        </label>
+        <label class="fld">Amount for one
+          <input type="number" id="recipeAmount" min="0" step="any" placeholder="e.g. 18">
+        </label>
+        <span class="unit-tag" id="recipeUnitTag">–</span>
+      </div>
+      <button class="btn btn-save" id="addRecipeLine" style="margin-top:10px;">＋ Add to recipe</button>
+    </div>
+  </div>
+
+  <!-- cost, price and margin per item -->
+  <div id="cost-menucost" class="cost-section hidden">
+    <div class="monthbar">
+      <button onclick="shiftCostMonth(-1)" aria-label="Previous month">‹</button>
+      <input type="month" id="costMonth">
+      <button onclick="shiftCostMonth(1)" aria-label="Next month">›</button>
+    </div>
+    <div class="stats" id="costStats"></div>
+    <div id="costWarning"></div>
+    <div class="card-block">
+      <h3>Cost &amp; margin per item</h3>
+      <div class="muted-note">Based on the recipes above and the latest price paid for each ingredient. Items with no recipe yet show “–”.</div>
+      <div class="table-wrap"><table class="dtable" id="menuCostTable"></table></div>
+    </div>
+    <div class="card-block">
+      <h3>Ingredients used this month</h3>
+      <div class="muted-note">Worked out from what was sold, not from stock counts.</div>
+      <div class="table-wrap"><table class="dtable" id="usageTable"></table></div>
+    </div>
+  </div>
+</div>
+
 <!-- MENU MANAGEMENT VIEW -->
 <div id="view-menu" class="summary-view hidden">
   <div class="card-block">
@@ -382,16 +551,19 @@ function showView(v) {
   document.getElementById("view-new").classList.toggle("hidden", v !== "new");
   document.getElementById("view-orders").classList.toggle("hidden", v !== "orders");
   document.getElementById("view-summary").classList.toggle("hidden", v !== "summary");
+  document.getElementById("view-cost").classList.toggle("hidden", v !== "cost");
   document.getElementById("view-menu").classList.toggle("hidden", v !== "menu");
   document.getElementById("tab-new").classList.toggle("active", v === "new");
   document.getElementById("tab-orders").classList.toggle("active", v === "orders");
   document.getElementById("tab-summary").classList.toggle("active", v === "summary");
+  document.getElementById("tab-cost").classList.toggle("active", v === "cost");
   document.getElementById("tab-menu").classList.toggle("active", v === "menu");
   // Refresh the shelf on the way in — a bill may have been held from the phone
   // while this screen sat on another tab.
   if (v === "new") loadHeld();
   if (v === "orders") loadHistory();
   if (v === "summary") loadSummary_();
+  if (v === "cost") loadCost();
   if (v === "menu") loadMenuAdmin();
 }
 
@@ -921,6 +1093,499 @@ function renderChart(points) {
   });
 }
 
+/* ---------- cost ----------
+   Four questions, one tab: what we bought this time (Buy), what an ingredient
+   costs and which drinks it goes into (Ingredients), how much of it one glass
+   takes (Recipes), and what that leaves as margin (Menu cost). */
+let COST_UNITS = {};        // unit -> {family, factor}
+let INGREDIENTS = [];
+let costSection = "buy";
+let openIngredientId = null; // the ingredient card expanded on the list
+let recipeItemId = null;
+
+// Ingredient names are typed by the user and land in innerHTML — escape them.
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const qty = n => (Math.round(Number(n) * 1000) / 1000).toLocaleString();
+// A gram of beans costs a fraction of a satang — two decimals would round it to zero.
+const unitCost = n => "฿" + Number(n).toFixed(Number(n) < 1 ? 4 : 2);
+const dmy = iso => iso
+  ? new Date(iso + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })
+  : "–";
+function toBase(value, from, base) {
+  const a = COST_UNITS[from], b = COST_UNITS[base];
+  if (!a || !b || a.family !== b.family) return null;
+  return value * a.factor / b.factor;
+}
+function ingredientById(id) { return INGREDIENTS.find(i => i.id === Number(id)); }
+function itemLabel(m) { return m.name + (m.temperature ? ` (${m.temperature})` : ""); }
+
+async function loadCost() {
+  const data = await (await fetch("/api/ingredients")).json();
+  COST_UNITS = data.units;
+  INGREDIENTS = data.ingredients;
+  fillUnitSelect(document.getElementById("newIngUnit"), Object.keys(COST_UNITS), "g");
+  fillIngredientSelects();
+  renderCostSection();
+}
+function fillUnitSelect(sel, units, chosen) {
+  sel.innerHTML = "";
+  units.forEach(u => {
+    const o = document.createElement("option");
+    o.value = u; o.textContent = u;
+    sel.appendChild(o);
+  });
+  if (chosen && units.indexOf(chosen) >= 0) sel.value = chosen;
+}
+function fillIngredientSelects() {
+  ["buyIngredient", "recipeIngredient"].forEach(id => {
+    const sel = document.getElementById(id);
+    const keep = sel.value;
+    sel.innerHTML = "";
+    INGREDIENTS.forEach(ing => {
+      const o = document.createElement("option");
+      o.value = ing.id;
+      o.textContent = ing.name + " (" + ing.unit + ")";
+      sel.appendChild(o);
+    });
+    if (keep && sel.querySelector('option[value="' + keep + '"]')) sel.value = keep;
+  });
+  updateBuyUnits();
+  updateRecipeUnitTag();
+}
+document.getElementById("costSectionChips").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  costSection = b.dataset.section;
+  document.querySelectorAll("#costSectionChips .chip").forEach(c => c.classList.remove("active"));
+  b.classList.add("active");
+  renderCostSection();
+};
+function renderCostSection() {
+  ["buy", "ingredients", "recipes", "menucost"].forEach(s =>
+    document.getElementById("cost-" + s).classList.toggle("hidden", s !== costSection));
+  if (costSection === "buy") loadPurchases();
+  if (costSection === "ingredients") renderIngredientList();
+  // The Cost tab can be the first thing opened, before the menu has arrived.
+  if (costSection === "recipes") {
+    (MENU.length ? Promise.resolve() : loadMenu()).then(() => { fillRecipeItems(); loadRecipe(); });
+  }
+  if (costSection === "menucost") loadMenuCosts();
+}
+
+/* --- 1. how much did we buy this time --- */
+function updateBuyUnits() {
+  const ing = ingredientById(document.getElementById("buyIngredient").value);
+  const sel = document.getElementById("buyUnit");
+  if (!ing) { sel.innerHTML = ""; return; }
+  const keep = sel.value;
+  fillUnitSelect(sel, ing.units, ing.units.indexOf(keep) >= 0 ? keep : ing.unit);
+  updateBuyPreview();
+}
+function updateBuyPreview() {
+  const el = document.getElementById("buyPreview");
+  const ing = ingredientById(document.getElementById("buyIngredient").value);
+  const packs = parseFloat(document.getElementById("buyPacks").value);
+  const size = parseFloat(document.getElementById("buyPackSize").value);
+  const unit = document.getElementById("buyUnit").value;
+  const price = parseFloat(document.getElementById("buyPrice").value);
+  if (!ing || !(packs > 0) || !(size > 0)) {
+    el.innerHTML = "Pick an ingredient, then fill in the amount and the price.";
+    return;
+  }
+  const base = toBase(packs * size, unit, ing.unit);
+  if (base === null) { el.innerHTML = `${esc(ing.name)} is measured in ${esc(ing.unit)} — that cannot be converted from ${esc(unit)}.`; return; }
+  let html = `That is <b>${qty(base)} ${esc(ing.unit)}</b>`;
+  if (price >= 0) {
+    const uc = price / base;
+    html += ` — <b>${unitCost(uc)} per ${esc(ing.unit)}</b>`;
+    if (ing.unit_cost != null && ing.unit_cost > 0) {
+      const pct = (uc - ing.unit_cost) / ing.unit_cost * 100;
+      if (Math.abs(pct) < 0.05) html += " · same price as last time";
+      else html += pct > 0
+        ? ` · <span class="up">▲ ${pct.toFixed(1)}% dearer than last time (${unitCost(ing.unit_cost)})</span>`
+        : ` · <span class="down">▼ ${Math.abs(pct).toFixed(1)}% cheaper than last time (${unitCost(ing.unit_cost)})</span>`;
+    }
+  }
+  el.innerHTML = html;
+}
+document.getElementById("buyIngredient").onchange = updateBuyUnits;
+["buyPacks", "buyPackSize", "buyPrice"].forEach(id =>
+  document.getElementById(id).oninput = updateBuyPreview);
+document.getElementById("buyUnit").onchange = updateBuyPreview;
+
+document.getElementById("savePurchase").onclick = async () => {
+  const btn = document.getElementById("savePurchase");
+  const payload = {
+    ingredient_id: parseInt(document.getElementById("buyIngredient").value, 10),
+    buy_date: document.getElementById("buyDate").value || todayStr(),
+    packs: parseFloat(document.getElementById("buyPacks").value),
+    pack_size: parseFloat(document.getElementById("buyPackSize").value),
+    pack_unit: document.getElementById("buyUnit").value,
+    total_price: parseFloat(document.getElementById("buyPrice").value),
+    note: document.getElementById("buyNote").value,
+  };
+  if (!(payload.packs > 0) || !(payload.pack_size > 0)) { alert("How much did you buy?"); return; }
+  if (!(payload.total_price >= 0)) { alert("Enter the total price paid."); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/purchases", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not save");
+    // Keep the ingredient and unit selected — restocking usually means several
+    // rows of the same receipt going in one after another.
+    document.getElementById("buyPackSize").value = "";
+    document.getElementById("buyPrice").value = "";
+    document.getElementById("buyNote").value = "";
+    toast(`Saved · ${unitCost(data.unit_cost)} per ${data.unit}`);
+    await loadCost();
+  } catch (err) {
+    alert("Could not save this purchase: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+async function loadPurchases() {
+  const rows = await (await fetch("/api/purchases?limit=60")).json();
+  const t = document.getElementById("purchaseTable");
+  if (!rows.length) { t.innerHTML = "<tr><td>Nothing bought yet.</td></tr>"; return; }
+  t.innerHTML = "<tr><th>Date</th><th>Ingredient</th><th>Bought</th><th class='num'>Paid</th>" +
+                "<th class='num'>Per unit</th><th></th></tr>";
+  rows.forEach(p => {
+    const tr = document.createElement("tr");
+    let change = "";
+    if (p.unit_cost_change) {
+      const up = p.unit_cost_change > 0;
+      change = ` <span class="${up ? "up" : "down"}" title="was ${unitCost(p.prev_unit_cost)}">${up ? "▲" : "▼"}</span>`;
+    }
+    const note = p.note ? `<div class="ing-meta">“${esc(p.note)}”</div>` : "";
+    tr.innerHTML = `
+      <td>${dmy(p.buy_date)}</td>
+      <td class="name">${esc(p.ingredient_name)}${note}</td>
+      <td>${qty(p.packs)} × ${qty(p.pack_size)} ${esc(p.pack_unit)}<br>
+          <span class="ing-meta">= ${qty(p.quantity)} ${esc(p.base_unit)}</span></td>
+      <td class="num">${money(p.total_price)}</td>
+      <td class="num">${unitCost(p.unit_cost)}${change}</td>
+      <td class="num"><button class="mini-btn danger">🗑</button></td>`;
+    tr.querySelector("button").onclick = async () => {
+      if (!confirm(`Delete this purchase of ${p.ingredient_name}?`)) return;
+      await fetch("/api/purchases/" + p.id, { method: "DELETE" });
+      toast("Purchase deleted");
+      loadCost();
+    };
+    t.appendChild(tr);
+  });
+}
+
+/* --- 2. what each ingredient costs + 3. which menu items use it --- */
+function renderIngredientList() {
+  const box = document.getElementById("ingredientList");
+  box.innerHTML = "";
+  if (!INGREDIENTS.length) { box.innerHTML = `<div class="empty">No ingredients yet.</div>`; return; }
+  INGREDIENTS.forEach(ing => {
+    const card = document.createElement("div");
+    card.className = "ing-card" + (ing.id === openIngredientId ? " open" : "");
+    const costTxt = ing.unit_cost != null
+      ? `<span class="ing-cost">${unitCost(ing.unit_cost)} / ${esc(ing.unit)}</span>`
+      : `<span class="ing-cost none">no price yet</span>`;
+    const last = ing.last_purchase;
+    const bought = last
+      ? `Last bought ${dmy(last.buy_date)} — ${qty(last.packs)} × ${qty(last.pack_size)} ${esc(last.pack_unit)} for ${money(last.total_price)}`
+      : `Log a purchase on the Buy tab to give this a price.`;
+    const used = ing.used_in
+      ? `Used in ${ing.used_in} menu item${ing.used_in > 1 ? "s" : ""}`
+      : `Not in any recipe yet`;
+    const spent = ing.purchases
+      ? ` · ${ing.purchases} purchase${ing.purchases > 1 ? "s" : ""}, ${money(ing.total_spent)} spent so far`
+      : "";
+    card.innerHTML = `
+      <div class="ing-head">
+        <div class="ing-top"><span class="ing-name">${esc(ing.name)}</span>${costTxt}</div>
+        <div class="ing-meta">${bought}</div>
+        <div class="ing-meta">🍹 ${used}${spent}</div>
+      </div>`;
+    card.querySelector(".ing-head").onclick = () => {
+      openIngredientId = openIngredientId === ing.id ? null : ing.id;
+      renderIngredientList();
+    };
+    if (ing.id === openIngredientId) {
+      const detail = document.createElement("div");
+      detail.className = "ing-detail";
+      detail.textContent = "Loading…";
+      card.appendChild(detail);
+      loadIngredientDetail(ing, detail);
+    }
+    box.appendChild(card);
+  });
+}
+async function loadIngredientDetail(ing, box) {
+  const data = await (await fetch(`/api/ingredients/${ing.id}/usage`)).json();
+  const usage = data.menu_items.length
+    ? `<div class="table-wrap"><table class="dtable">
+         <tr><th>Menu item</th><th class="num">Needs</th><th class="num">Cost per glass</th></tr>` +
+      data.menu_items.map(u => `<tr${u.active ? "" : ' class="dim"'}>
+         <td class="name">${esc(itemLabel(u))}${u.active ? "" : " (hidden)"}</td>
+         <td class="num">${qty(u.amount)} ${esc(ing.unit)}</td>
+         <td class="num">${ing.unit_cost != null ? money(Math.round(u.amount * ing.unit_cost * 100) / 100) : "–"}</td>
+       </tr>`).join("") + `</table></div>`
+    : `<div class="muted-note">Nothing uses this yet — add it to a drink on the Recipes tab.</div>`;
+  const history = data.purchases.length
+    ? `<div class="table-wrap"><table class="dtable">
+         <tr><th>Date</th><th>Bought</th><th class="num">Paid</th><th class="num">Per ${esc(ing.unit)}</th></tr>` +
+      data.purchases.map(p => `<tr>
+         <td>${dmy(p.buy_date)}</td>
+         <td>${qty(p.packs)} × ${qty(p.pack_size)} ${esc(p.pack_unit)} = ${qty(p.quantity)} ${esc(p.base_unit)}</td>
+         <td class="num">${money(p.total_price)}</td>
+         <td class="num">${unitCost(p.unit_cost)}</td>
+       </tr>`).join("") + `</table></div>`
+    : `<div class="muted-note">Never bought yet.</div>`;
+  const avg = ing.avg_unit_cost != null && ing.purchases > 1
+    ? `<div class="muted-note">Average across all ${ing.purchases} purchases: ${unitCost(ing.avg_unit_cost)} per ${esc(ing.unit)}.</div>`
+    : "";
+  box.innerHTML = `
+    <h4>Which drinks use it</h4>${usage}
+    <h4>Buying history</h4>${history}${avg}
+    <h4>Edit</h4>
+    <div class="cost-form">
+      <label class="fld wide">Name<input type="text" class="ed-name" value="${esc(ing.name)}"></label>
+      <label class="fld">Measured in<select class="ed-unit"></select></label>
+      <label class="fld">Note<input type="text" class="ed-note" value="${esc(ing.note)}"></label>
+    </div>
+    <div style="margin-top:10px;">
+      <button class="mini-btn save ed-save">Save changes</button>
+      <button class="mini-btn danger ed-del">Delete ingredient</button>
+    </div>`;
+  fillUnitSelect(box.querySelector(".ed-unit"), Object.keys(COST_UNITS), ing.unit);
+  box.querySelector(".ed-save").onclick = async () => {
+    const unit = box.querySelector(".ed-unit").value;
+    // Past purchases and recipe amounts keep the number they were saved with,
+    // so switching g -> kg silently misreads every old row by 1000x.
+    if (unit !== ing.unit && (ing.purchases || ing.used_in) &&
+        !confirm(`Change the unit from ${ing.unit} to ${unit}?\n\nPast purchases and recipe amounts keep their old numbers — they will be read as ${unit}. Check them afterwards.`)) return;
+    const res = await fetch("/api/ingredients/" + ing.id, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: box.querySelector(".ed-name").value,
+        unit,
+        note: box.querySelector(".ed-note").value,
+      }),
+    });
+    const out = await res.json();
+    if (!res.ok) { alert("Could not save: " + out.error); return; }
+    toast("Ingredient updated ✓");
+    loadCost();
+  };
+  box.querySelector(".ed-del").onclick = async () => {
+    if (!confirm(`Delete “${ing.name}”? Its purchase history and its place in ${data.menu_items.length} recipe(s) go with it.`)) return;
+    await fetch("/api/ingredients/" + ing.id, { method: "DELETE" });
+    openIngredientId = null;
+    toast("Ingredient deleted");
+    loadCost();
+  };
+}
+document.getElementById("addIngredient").onclick = async () => {
+  const name = document.getElementById("newIngName").value.trim();
+  if (!name) { alert("Give the ingredient a name."); return; }
+  const res = await fetch("/api/ingredients", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      unit: document.getElementById("newIngUnit").value,
+      note: document.getElementById("newIngNote").value,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert("Could not add: " + data.error); return; }
+  document.getElementById("newIngName").value = "";
+  document.getElementById("newIngNote").value = "";
+  toast("Ingredient added ✓");
+  loadCost();
+};
+
+/* --- 4. how much of an ingredient one glass needs --- */
+function fillRecipeItems() {
+  const sel = document.getElementById("recipeItem");
+  const keep = recipeItemId || sel.value;
+  sel.innerHTML = "";
+  [...new Set(MENU.map(m => m.category))].forEach(cat => {
+    const g = document.createElement("optgroup");
+    g.label = cat;
+    MENU.filter(m => m.category === cat).forEach(m => {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = itemLabel(m);
+      g.appendChild(o);
+    });
+    sel.appendChild(g);
+  });
+  if (keep && sel.querySelector('option[value="' + keep + '"]')) sel.value = keep;
+  recipeItemId = sel.value ? Number(sel.value) : null;
+}
+document.getElementById("recipeItem").onchange = () => {
+  recipeItemId = Number(document.getElementById("recipeItem").value);
+  loadRecipe();
+};
+document.getElementById("recipeIngredient").onchange = updateRecipeUnitTag;
+function updateRecipeUnitTag() {
+  const ing = ingredientById(document.getElementById("recipeIngredient").value);
+  document.getElementById("recipeUnitTag").textContent = ing ? ing.unit : "–";
+}
+async function loadRecipe() {
+  if (!recipeItemId) return;
+  const r = await (await fetch("/api/recipes/" + recipeItemId)).json();
+  renderRecipeSummary(r);
+  renderRecipeTable(r);
+}
+function renderRecipeSummary(r) {
+  const box = document.getElementById("recipeSummary");
+  const price = r.price == null
+    ? `<div><div class="lbl">Sells for</div><div class="num">typed at the till</div></div>`
+    : `<div><div class="lbl">Sells for</div><div class="num">${money(r.price)}</div></div>`;
+  const marginClass = r.margin != null && r.margin < 0 ? "bad" : "good";
+  const margin = r.price == null ? "" : `
+    <div><div class="lbl">Profit per glass</div>
+      <div class="num ${marginClass}">${money(r.margin)}${r.margin_pct != null ? ` (${r.margin_pct}%)` : ""}</div></div>`;
+  box.innerHTML = `
+    ${price}
+    <div><div class="lbl">Costs to make</div><div class="num">${money(r.cost)}</div></div>
+    ${margin}`;
+  const warn = document.getElementById("recipeWarn");
+  if (!r.lines.length) {
+    warn.innerHTML = `<div class="warn">No recipe yet — add the ingredients below to see what this drink really costs.</div>`;
+  } else if (r.missing.length) {
+    // An unpriced ingredient would otherwise make the drink look cheaper to
+    // make than it is, and the margin correspondingly better.
+    warn.innerHTML = `<div class="warn">Never bought yet, so not counted in the cost:
+      ${esc(r.missing.join(", "))}. The real cost is higher than shown.</div>`;
+  } else {
+    warn.innerHTML = "";
+  }
+}
+function renderRecipeTable(r) {
+  const t = document.getElementById("recipeTable");
+  if (!r.lines.length) { t.innerHTML = ""; return; }
+  t.innerHTML = `<tr><th>Ingredient</th><th class="num">Needed for one</th>
+                 <th class="num">Cost per unit</th><th class="num">Cost</th><th></th></tr>`;
+  r.lines.forEach(ln => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="name">${esc(ln.name)}</td>
+      <td class="num"><input type="number" min="0" step="any" value="${ln.amount}"> ${esc(ln.unit)}</td>
+      <td class="num">${ln.unit_cost != null ? unitCost(ln.unit_cost) : "not bought yet"}</td>
+      <td class="num">${ln.line_cost != null ? money(ln.line_cost) : "–"}</td>
+      <td class="num"><button class="mini-btn save">Save</button><button class="mini-btn danger">🗑</button></td>`;
+    const [saveBtn, delBtn] = tr.querySelectorAll("button");
+    saveBtn.onclick = async () => {
+      const amount = parseFloat(tr.querySelector("input").value);
+      if (!(amount > 0)) { alert("Enter how much goes into one glass."); return; }
+      await saveRecipeLine(ln.ingredient_id, amount);
+    };
+    delBtn.onclick = async () => {
+      if (!confirm(`Remove ${ln.name} from this recipe?`)) return;
+      await fetch("/api/recipes/lines/" + ln.id, { method: "DELETE" });
+      toast("Removed from recipe");
+      loadCost();
+    };
+    t.appendChild(tr);
+  });
+}
+async function saveRecipeLine(ingredientId, amount) {
+  const res = await fetch("/api/recipes/" + recipeItemId, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ingredient_id: ingredientId, amount }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert("Could not save: " + data.error); return; }
+  toast("Recipe updated ✓");
+  loadCost();
+}
+document.getElementById("addRecipeLine").onclick = async () => {
+  const ing = ingredientById(document.getElementById("recipeIngredient").value);
+  const amount = parseFloat(document.getElementById("recipeAmount").value);
+  if (!ing) { alert("Pick an ingredient."); return; }
+  if (!(amount > 0)) { alert(`How much ${ing.name} (in ${ing.unit}) goes into one?`); return; }
+  document.getElementById("recipeAmount").value = "";
+  await saveRecipeLine(ing.id, amount);
+};
+
+/* --- cost, price and margin per item --- */
+function shiftCostMonth(delta) {
+  const inp = document.getElementById("costMonth");
+  const [y, m] = inp.value.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  inp.value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  loadMenuCosts();
+}
+document.getElementById("costMonth").onchange = loadMenuCosts;
+async function loadMenuCosts() {
+  const inp = document.getElementById("costMonth");
+  if (!inp.value) inp.value = currentMonthStr();
+  const [items, period] = await Promise.all([
+    fetch("/api/costs/menu").then(r => r.json()),
+    fetch("/api/costs/period?month=" + inp.value).then(r => r.json()),
+  ]);
+  renderCostStats(period);
+  renderMenuCostTable(items);
+  renderUsageTable(period.sold.by_ingredient);
+}
+function renderCostStats(p) {
+  const s = p.sold, buy = p.spend;
+  document.getElementById("costStats").innerHTML = `
+    <div class="stat"><div class="label">Revenue</div><div class="value">${money(s.revenue)}</div></div>
+    <div class="stat"><div class="label">🥫 Ingredient cost</div><div class="value">${money(s.cost)}</div></div>
+    <div class="stat cash"><div class="label">Gross profit</div><div class="value">${money(s.gross_profit)}</div></div>
+    <div class="stat"><div class="label">Cost as % of sales</div><div class="value">${s.cost_pct == null ? "–" : s.cost_pct + "%"}</div></div>
+    <div class="stat transfer"><div class="label">🛒 Spent restocking</div><div class="value">${money(buy.spent)}</div></div>
+    <div class="stat"><div class="label">Purchases logged</div><div class="value">${buy.purchases}</div></div>`;
+  const box = document.getElementById("costWarning");
+  // Gross profit here only nets off drinks whose recipe is fully priced; saying
+  // so keeps a flattering number from being read as the real one.
+  box.innerHTML = s.unpriced_qty
+    ? `<div class="warn">${qty(s.unpriced_qty)} item(s) sold this month have no complete recipe yet,
+       so their ingredient cost is not in these figures. Gross profit is optimistic until every
+       drink sold has a full recipe with priced ingredients.</div>`
+    : "";
+}
+function renderMenuCostTable(items) {
+  const t = document.getElementById("menuCostTable");
+  t.innerHTML = `<tr><th>Item</th><th class="num">Price</th><th class="num">Cost</th>
+                 <th class="num">Profit</th><th class="num">Margin</th></tr>`;
+  items.forEach(it => {
+    const tr = document.createElement("tr");
+    const noRecipe = it.recipe_lines === 0;
+    if (noRecipe) tr.className = "dim";
+    const warn = it.missing.length
+      ? ` <span title="No price yet for: ${esc(it.missing.join(", "))}">⚠</span>` : "";
+    tr.innerHTML = `
+      <td class="name">${esc(itemLabel(it))}${noRecipe ? " <span class='ing-meta'>· no recipe</span>" : ""}</td>
+      <td class="num">${it.price == null ? "custom" : money(it.price)}</td>
+      <td class="num">${noRecipe ? "–" : money(it.cost) + warn}</td>
+      <td class="num">${it.margin == null || noRecipe ? "–" : money(it.margin)}</td>
+      <td class="num">${it.margin_pct == null || noRecipe ? "–" : it.margin_pct + "%"}</td>`;
+    tr.querySelector(".name").style.cursor = "pointer";
+    tr.querySelector(".name").onclick = () => {
+      // Jump straight to the recipe that produced (or is missing from) this row.
+      recipeItemId = it.id;
+      costSection = "recipes";
+      document.querySelectorAll("#costSectionChips .chip").forEach(c =>
+        c.classList.toggle("active", c.dataset.section === "recipes"));
+      renderCostSection();
+    };
+    t.appendChild(tr);
+  });
+}
+function renderUsageTable(rows) {
+  const t = document.getElementById("usageTable");
+  if (!rows.length) { t.innerHTML = "<tr><td>Nothing costed yet this month.</td></tr>"; return; }
+  t.innerHTML = `<tr><th>Ingredient</th><th class="num">Used</th><th class="num">Cost</th></tr>` +
+    rows.map(r => `<tr><td class="name">${esc(r.name)}</td>
+      <td class="num">${qty(r.quantity)} ${esc(r.unit)}</td>
+      <td class="num">${money(r.cost)}</td></tr>`).join("");
+}
+
 /* ---------- menu management ---------- */
 async function loadMenuAdmin() {
   const items = await (await fetch("/api/menu?all=1")).json();
@@ -1022,6 +1687,8 @@ document.getElementById("histDate").value = todayStr();
 document.getElementById("summaryDate").value = todayStr();
 document.getElementById("summaryMonth").value = currentMonthStr();
 document.getElementById("summaryYear").textContent = summaryYear;
+document.getElementById("buyDate").value = todayStr();
+document.getElementById("costMonth").value = currentMonthStr();
 loadMenu();
 loadSummary();
 loadHeld();
