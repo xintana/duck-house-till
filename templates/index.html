@@ -281,7 +281,6 @@
   .recipe-summary .lbl { font-size: 12px; color: var(--muted); font-weight: 600; }
   .recipe-summary .good { color: var(--ok); }
   .recipe-summary .bad { color: var(--danger); }
-  .unit-tag { padding-bottom: 12px; font-weight: 700; color: var(--muted); font-size: 14px; }
 
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(80px);
@@ -515,7 +514,9 @@
         <label class="fld">Amount for one
           <input type="number" id="recipeAmount" min="0" step="any" placeholder="e.g. 18">
         </label>
-        <span class="unit-tag" id="recipeUnitTag">–</span>
+        <label class="fld">Measured in
+          <select id="recipeUnit"></select>
+        </label>
       </div>
       <button class="btn btn-save" id="addRecipeLine" style="margin-top:10px;">＋ Add to recipe</button>
     </div>
@@ -1606,7 +1607,11 @@ document.getElementById("recipeItem").onchange = () => {
 document.getElementById("recipeIngredient").onchange = updateRecipeUnitTag;
 function updateRecipeUnitTag() {
   const ing = ingredientById(document.getElementById("recipeIngredient").value);
-  document.getElementById("recipeUnitTag").textContent = ing ? ing.unit : "–";
+  const sel = document.getElementById("recipeUnit");
+  if (!ing) { sel.innerHTML = ""; return; }
+  // Defaults to the base unit, but a recipe can be written the way the drink is
+  // actually made — one scoop of ice cream rather than 60 g of it.
+  fillUnitSelect(sel, ing.units, ing.unit);
 }
 async function loadRecipe() {
   if (!recipeItemId) return;
@@ -1667,10 +1672,10 @@ function renderRecipeTable(r) {
     t.appendChild(tr);
   });
 }
-async function saveRecipeLine(ingredientId, amount) {
+async function saveRecipeLine(ingredientId, amount, unit) {
   const res = await fetch("/api/recipes/" + recipeItemId, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ingredient_id: ingredientId, amount }),
+    body: JSON.stringify({ ingredient_id: ingredientId, amount, unit }),
   });
   const data = await res.json();
   if (!res.ok) { alert("Could not save: " + data.error); return; }
@@ -1680,10 +1685,11 @@ async function saveRecipeLine(ingredientId, amount) {
 document.getElementById("addRecipeLine").onclick = async () => {
   const ing = ingredientById(document.getElementById("recipeIngredient").value);
   const amount = parseFloat(document.getElementById("recipeAmount").value);
+  const unit = document.getElementById("recipeUnit").value;
   if (!ing) { alert("Pick an ingredient."); return; }
-  if (!(amount > 0)) { alert(`How much ${ing.name} (in ${ing.unit}) goes into one?`); return; }
+  if (!(amount > 0)) { alert(`How much ${ing.name} (in ${unit || ing.unit}) goes into one?`); return; }
   document.getElementById("recipeAmount").value = "";
-  await saveRecipeLine(ing.id, amount);
+  await saveRecipeLine(ing.id, amount, unit);
 };
 
 /* --- cost, price and margin per item --- */

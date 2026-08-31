@@ -21,6 +21,12 @@ from pathlib import Path
 
 import db
 
+# What one scoop of ice cream weighs. Ice cream is bought by the tub in
+# kilograms but served by the scoop, so the scoop has to be a weight for the two
+# to meet. Weigh a scoop on the shop's own scales and change this one number if
+# it is not 60 g — every ice cream cost and stock figure follows from it.
+SCOOP_GRAMS = 60.0
+
 # unit -> (family, how many base units it is worth). Units only convert within a
 # family: kg -> g is fine, ml -> g is not (we do not know the density).
 # Every count unit is worth 1 so a shop can buy in ขวด and keep the recipe in ลูก
@@ -28,13 +34,13 @@ import db
 UNITS: dict[str, tuple[str, float]] = {
     "g": ("weight", 1.0),
     "kg": ("weight", 1000.0),
+    "scoop": ("weight", SCOOP_GRAMS),
     "ml": ("volume", 1.0),
     "l": ("volume", 1000.0),
     "pcs": ("count", 1.0),
     "ขวด": ("count", 1.0),
     "ลูก": ("count", 1.0),
     "ถุง": ("count", 1.0),
-    "scoop": ("count", 1.0),
 }
 
 SCHEMA = """
@@ -99,8 +105,10 @@ _INGREDIENT_SEED = [
     ("น้ำผึ้งขวด", "ml"),
     ("ผงโกโก้ Coffman", "g"),
     ("Soda Rock Mountain แพ็ค", "ขวด"),
-    ("ice cream vanilla", "scoop"),
-    ("ice cream fresh milk", "scoop"),
+    # Bought by the tub in kilograms, served by the scoop — stored in grams so
+    # both can be entered and the tub price divides down to the scoop honestly.
+    ("ice cream vanilla", "g"),
+    ("ice cream fresh milk", "g"),
     ("Lemon", "ลูก"),
 ]
 
@@ -114,12 +122,56 @@ def init_db(db_path: str | Path) -> None:
         columns = {r["name"] for r in conn.execute("PRAGMA table_info(ingredients)")}
         if "min_stock" not in columns:
             conn.execute("ALTER TABLE ingredients ADD COLUMN min_stock REAL")
+        _rebase_scoops_to_grams(conn)
         already = conn.execute("SELECT COUNT(*) FROM ingredients").fetchone()[0]
         if already == 0:
             conn.executemany(
                 "INSERT INTO ingredients (name, unit, sort) VALUES (?, ?, ?)",
                 [(name, unit, i) for i, (name, unit) in enumerate(_INGREDIENT_SEED)],
             )
+
+
+def _rebase_scoops_to_grams(conn) -> None:
+    """Move ingredients still measured in scoops onto grams.
+
+    A scoop used to be a countable thing worth 1, which meant a tub bought in
+    kilograms could not be entered against it at all. It is now a weight, so any
+    figure previously stored as "3 scoops" means 3 x SCOOP_GRAMS and has to be
+    restated — otherwise the same rows would silently be read as 3 grams.
+    Quantities scale up and per-unit costs scale down; the money paid is
+    unchanged. What the user typed ("2 scoop") is left alone: it stays true.
+    """
+    stale = conn.execute("SELECT id FROM ingredients WHERE unit = 'scoop'").fetchall()
+    if not stale:
+        return
+    tables = {
+        r["name"]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    for row in stale:
+        iid = row["id"]
+        if "ingredient_purchases" in tables:
+            conn.execute(
+                "UPDATE ingredient_purchases SET quantity = quantity * ?, "
+                "unit_cost = unit_cost / ? WHERE ingredient_id = ?",
+                (SCOOP_GRAMS, SCOOP_GRAMS, iid),
+            )
+        if "recipe_lines" in tables:
+            conn.execute(
+                "UPDATE recipe_lines SET amount = amount * ? WHERE ingredient_id = ?",
+                (SCOOP_GRAMS, iid),
+            )
+        # Written by stock.py, which initialises after this module on a fresh file.
+        if "stock_counts" in tables:
+            conn.execute(
+                "UPDATE stock_counts SET quantity = quantity * ? WHERE ingredient_id = ?",
+                (SCOOP_GRAMS, iid),
+            )
+        conn.execute(
+            "UPDATE ingredients SET unit = 'g', "
+            "min_stock = min_stock * ? WHERE id = ?",
+            (SCOOP_GRAMS, iid),
+        )
 
 
 # ---- units -----------------------------------------------------------------
@@ -624,18 +676,31 @@ def delete_purchase(db_path: str | Path, purchase_id: int) -> None:
 
 
 def set_recipe_line(
-    db_path: str | Path, menu_item_id: int, ingredient_id: int, amount: float
+    db_path: str | Path,
+    menu_item_id: int,
+    ingredient_id: int,
+    amount: float,
+    unit: str | None = None,
 ) -> int:
     """Set how much of one ingredient goes into one serving. Re-setting an
-    existing pair overwrites it, so the same ingredient can never be listed twice."""
+    existing pair overwrites it, so the same ingredient can never be listed twice.
+
+    `unit` lets a recipe be written the way it is actually made — one scoop of
+    ice cream rather than 60 g of it — and is converted to the base unit here.
+    """
     amount = float(amount)
     if amount <= 0:
         raise ValueError("Amount must be greater than zero.")
     with db.connect(db_path) as conn:
         if conn.execute("SELECT 1 FROM menu_items WHERE id = ?", (menu_item_id,)).fetchone() is None:
             raise ValueError("No such menu item.")
-        if conn.execute("SELECT 1 FROM ingredients WHERE id = ?", (ingredient_id,)).fetchone() is None:
+        base = conn.execute(
+            "SELECT unit FROM ingredients WHERE id = ?", (ingredient_id,)
+        ).fetchone()
+        if base is None:
             raise ValueError("No such ingredient.")
+        if unit:
+            amount = to_base(amount, unit, base["unit"])
         conn.execute(
             "INSERT INTO recipe_lines (menu_item_id, ingredient_id, amount) "
             "VALUES (?, ?, ?) ON CONFLICT (menu_item_id, ingredient_id) "

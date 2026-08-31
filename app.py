@@ -354,6 +354,7 @@ def api_set_recipe_line(menu_item_id: int):
             menu_item_id,
             ingredient_id=int(data["ingredient_id"]),
             amount=data["amount"],
+            unit=data.get("unit"),
         )
     except (ValueError, KeyError, TypeError) as e:
         return jsonify({"error": str(e)}), 400
