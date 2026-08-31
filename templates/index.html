@@ -43,13 +43,15 @@
   }
 
   /* tabs */
-  .tabs { display: flex; background: var(--brand-dark); }
+  .tabs { display: flex; flex-wrap: wrap; background: var(--brand-dark); }
   .tabs button {
-    flex: 1; border: none; background: transparent; color: #f4e6d6; padding: 12px 4px;
+    flex: 1 1 auto; border: none; background: transparent; color: #f4e6d6; padding: 12px 4px;
     font-size: 14px; font-weight: 700; cursor: pointer; border-bottom: 3px solid transparent;
     white-space: nowrap;
   }
-  @media (max-width: 420px) { .tabs button { font-size: 12px; padding: 11px 2px; } }
+  /* Six tabs will not fit across a phone. Two rows of three keeps every tab
+     visible and thumb-sized, rather than shrinking them all to fit one line. */
+  @media (max-width: 620px) { .tabs button { flex: 1 1 33.333%; font-size: 13px; } }
   .tabs button.active { color: #fff; border-bottom-color: #fff; background: rgba(255,255,255,.08); }
 
   .layout { display: flex; gap: 14px; padding: 14px; max-width: 1100px; margin: 0 auto; }
@@ -252,6 +254,13 @@
   table.dtable td.name { white-space: normal; min-width: 120px; }
   table.dtable tr.dim td { color: var(--muted); }
   table.dtable input[type=number] { width: 84px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  table.dtable select { padding: 5px; border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 13px; margin-left: 4px; }
+  .good { color: var(--ok); }
+  .bad { color: var(--danger); }
+  .low-tag {
+    display: inline-block; background: #fbeaea; color: var(--danger); border: 1px solid #f0cccc;
+    font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+  }
 
   .ing-card { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
   .ing-card.open { box-shadow: inset 3px 0 0 var(--brand); }
@@ -302,6 +311,7 @@
   <button id="tab-new" class="active" onclick="showView('new')">🧾 Order</button>
   <button id="tab-orders" onclick="showView('orders')">📊 Orders</button>
   <button id="tab-summary" onclick="showView('summary')">📈 Summary</button>
+  <button id="tab-stock" onclick="showView('stock')">📦 Stock</button>
   <button id="tab-cost" onclick="showView('cost')">💰 Cost</button>
   <button id="tab-menu" onclick="showView('menu')">⚙️ Menu</button>
 </nav>
@@ -391,6 +401,27 @@
   <div class="card-block">
     <h3 id="itemsTitle">Items sold</h3>
     <table class="top-items" id="topItems"></table>
+  </div>
+</div>
+
+<!-- STOCK VIEW -->
+<div id="view-stock" class="summary-view hidden">
+  <div class="datebar">
+    <button onclick="shiftStockDate(-1)" aria-label="Previous day">‹</button>
+    <input type="date" id="stockDate">
+    <button class="today-btn" onclick="goStockToday()">Today</button>
+    <button onclick="shiftStockDate(1)" aria-label="Next day">›</button>
+  </div>
+  <div class="stats" id="stockStats"></div>
+  <div id="stockAlert"></div>
+  <div class="card-block">
+    <h3>Count what is on the shelf</h3>
+    <div class="muted-note">Type in what you actually have and press save. Blank rows are left
+      untouched, so you can count part of the shelf now and the rest later.
+      <b>Should be</b> is your last count, plus what you have bought since, minus what the
+      recipes say the sales used — so the difference is what went missing.</div>
+    <div class="table-wrap"><table class="dtable" id="stockTable"></table></div>
+    <button class="btn btn-save" id="saveStock" style="margin-top:12px;">💾 Save this count</button>
   </div>
 </div>
 
@@ -551,11 +582,13 @@ function showView(v) {
   document.getElementById("view-new").classList.toggle("hidden", v !== "new");
   document.getElementById("view-orders").classList.toggle("hidden", v !== "orders");
   document.getElementById("view-summary").classList.toggle("hidden", v !== "summary");
+  document.getElementById("view-stock").classList.toggle("hidden", v !== "stock");
   document.getElementById("view-cost").classList.toggle("hidden", v !== "cost");
   document.getElementById("view-menu").classList.toggle("hidden", v !== "menu");
   document.getElementById("tab-new").classList.toggle("active", v === "new");
   document.getElementById("tab-orders").classList.toggle("active", v === "orders");
   document.getElementById("tab-summary").classList.toggle("active", v === "summary");
+  document.getElementById("tab-stock").classList.toggle("active", v === "stock");
   document.getElementById("tab-cost").classList.toggle("active", v === "cost");
   document.getElementById("tab-menu").classList.toggle("active", v === "menu");
   // Refresh the shelf on the way in — a bill may have been held from the phone
@@ -563,6 +596,7 @@ function showView(v) {
   if (v === "new") loadHeld();
   if (v === "orders") loadHistory();
   if (v === "summary") loadSummary_();
+  if (v === "stock") loadStock();
   if (v === "cost") loadCost();
   if (v === "menu") loadMenuAdmin();
 }
@@ -1093,6 +1127,142 @@ function renderChart(points) {
   });
 }
 
+/* ---------- stock ----------
+   A daily count of what is physically on the shelf, checked against what the
+   purchases and recipes say should be there. */
+let STOCK = null;
+
+function shiftStockDate(days) {
+  const inp = document.getElementById("stockDate");
+  const d = new Date(inp.value + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  inp.value = d.toLocaleDateString("en-CA");
+  loadStock();
+}
+function goStockToday() {
+  document.getElementById("stockDate").value = todayStr();
+  loadStock();
+}
+document.getElementById("stockDate").onchange = loadStock;
+
+async function loadStock() {
+  const inp = document.getElementById("stockDate");
+  if (!inp.value) inp.value = todayStr();
+  applyStock(await (await fetch("/api/stock?date=" + inp.value)).json());
+}
+function applyStock(s) {
+  STOCK = s;
+  renderStockStats(s);
+  renderStockTable(s);
+}
+function renderStockStats(s) {
+  const short = s.low.length;
+  // A gap only means something once a count has been taken against a previous
+  // one, so it is labelled as unexplained rather than as loss.
+  const varianceTxt = s.variance_value
+    ? `<span class="${s.variance_value < 0 ? "bad" : "good"}">${money(s.variance_value)}</span>`
+    : "฿0";
+  document.getElementById("stockStats").innerHTML = `
+    <div class="stat"><div class="label">📦 Stock value</div><div class="value">${money(s.total_value)}</div></div>
+    <div class="stat"><div class="label">Counted this day</div><div class="value">${s.counted} / ${s.ingredients}</div></div>
+    <div class="stat"><div class="label">⚠️ Running low</div><div class="value">${short}</div></div>
+    <div class="stat"><div class="label">Unexplained</div><div class="value">${varianceTxt}</div></div>`;
+  const alertBox = document.getElementById("stockAlert");
+  if (!short) { alertBox.innerHTML = ""; return; }
+  const names = s.rows.filter(r => r.low).map(r => {
+    const left = r.days_left != null ? ` (${r.days_left} day${r.days_left === 1 ? "" : "s"} left)` : "";
+    return esc(r.name) + left;
+  });
+  alertBox.innerHTML = `<div class="warn"><b>Time to buy:</b> ${names.join(" · ")}</div>`;
+}
+function renderStockTable(s) {
+  const t = document.getElementById("stockTable");
+  t.innerHTML = `<tr><th>Ingredient</th><th class="num">Should be</th>
+                 <th class="num">Counted</th><th class="num">Difference</th><th class="num">Worth</th></tr>`;
+  s.rows.forEach(r => {
+    const tr = document.createElement("tr");
+
+    // Sub-line: how fast it is going and why a figure might be missing.
+    const bits = [];
+    if (r.low) bits.push(`<span class="low-tag">running low</span>`);
+    if (r.days_left != null) bits.push(`${r.days_left} days left`);
+    else if (!r.in_a_recipe) bits.push("not in any recipe");
+    if (r.min_stock != null) bits.push(`alert below ${qty(r.min_stock)} ${esc(r.unit)}`);
+    const sub = bits.length ? `<div class="ing-meta">${bits.join(" · ")}</div>` : "";
+
+    // Hovering the expectation shows the sum behind it, so a surprising number
+    // can be argued with rather than just believed.
+    let expected = "–", expTitle = "No earlier count to measure from — this count sets the baseline.";
+    if (r.expected != null) {
+      expected = `${qty(r.expected)} <span class="ing-meta">${esc(r.unit)}</span>`;
+      expTitle = `${qty(r.basis_qty)} counted on ${r.basis_date}` +
+                 ` + ${qty(r.bought_since)} bought − ${qty(r.used_since)} used`;
+      if (!r.in_a_recipe) expTitle += " (no recipe uses this, so nothing is deducted for sales)";
+    }
+
+    let diff = "–";
+    if (r.variance != null) {
+      const cls = r.variance < 0 ? "bad" : (r.variance > 0 ? "good" : "");
+      const sign = r.variance > 0 ? "+" : "";
+      diff = `<span class="${cls}">${sign}${qty(r.variance)}</span>`;
+    }
+
+    tr.innerHTML = `
+      <td class="name">${esc(r.name)}${sub}</td>
+      <td class="num" title="${esc(expTitle)}">${expected}</td>
+      <td class="num"><input type="number" class="count" min="0" step="any"
+            data-ing="${r.id}" value="${r.entered_qty != null ? r.entered_qty : ""}"
+            placeholder="–"><select class="count-unit" data-ing="${r.id}"></select></td>
+      <td class="num">${diff}</td>
+      <td class="num">${r.value != null ? money(r.value) : "–"}</td>`;
+
+    const unitSel = tr.querySelector(".count-unit");
+    fillUnitSelect(unitSel, r.units, r.entered_unit || r.unit);
+    if (r.counted != null) {
+      // Only a saved row can be cleared; an untouched one has nothing to undo.
+      const clear = document.createElement("button");
+      clear.className = "mini-btn danger";
+      clear.textContent = "✕";
+      clear.title = "Remove this day's count";
+      clear.onclick = async () => {
+        if (!confirm(`Remove the count for ${r.name} on ${s.date}?`)) return;
+        const res = await fetch(`/api/stock/${r.id}?date=${s.date}`, { method: "DELETE" });
+        applyStock((await res.json()).status);
+        toast("Count removed");
+      };
+      tr.children[2].appendChild(clear);
+    }
+    t.appendChild(tr);
+  });
+}
+document.getElementById("saveStock").onclick = async () => {
+  const btn = document.getElementById("saveStock");
+  const counts = [...document.querySelectorAll("#stockTable input.count")]
+    .filter(i => i.value !== "")
+    .map(i => ({
+      ingredient_id: Number(i.dataset.ing),
+      quantity: parseFloat(i.value),
+      unit: document.querySelector(`#stockTable select.count-unit[data-ing="${i.dataset.ing}"]`).value,
+    }));
+  if (!counts.length) { alert("Type in at least one count first."); return; }
+  if (counts.some(c => !(c.quantity >= 0))) { alert("Counts cannot be negative."); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/stock", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: document.getElementById("stockDate").value, counts }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not save");
+    applyStock(data.status);
+    toast(`Saved ${data.saved} count${data.saved === 1 ? "" : "s"} ✓`);
+  } catch (err) {
+    alert("Could not save the count: " + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
 /* ---------- cost ----------
    Four questions, one tab: what we bought this time (Buy), what an ingredient
    costs and which drinks it goes into (Ingredients), how much of it one glass
@@ -1352,6 +1522,9 @@ async function loadIngredientDetail(ing, box) {
     <div class="cost-form">
       <label class="fld wide">Name<input type="text" class="ed-name" value="${esc(ing.name)}"></label>
       <label class="fld">Measured in<select class="ed-unit"></select></label>
+      <label class="fld">Warn me below (${esc(ing.unit)})
+        <input type="number" class="ed-min" min="0" step="any" placeholder="no alert"
+               value="${ing.min_stock == null ? "" : ing.min_stock}"></label>
       <label class="fld">Note<input type="text" class="ed-note" value="${esc(ing.note)}"></label>
     </div>
     <div style="margin-top:10px;">
@@ -1370,6 +1543,8 @@ async function loadIngredientDetail(ing, box) {
       body: JSON.stringify({
         name: box.querySelector(".ed-name").value,
         unit,
+        // Sent as "" when cleared, which the server reads as "stop alerting me".
+        min_stock: box.querySelector(".ed-min").value,
         note: box.querySelector(".ed-note").value,
       }),
     });
@@ -1689,6 +1864,7 @@ document.getElementById("summaryMonth").value = currentMonthStr();
 document.getElementById("summaryYear").textContent = summaryYear;
 document.getElementById("buyDate").value = todayStr();
 document.getElementById("costMonth").value = currentMonthStr();
+document.getElementById("stockDate").value = todayStr();
 loadMenu();
 loadSummary();
 loadHeld();

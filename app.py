@@ -18,6 +18,7 @@ import config
 import cost
 import db
 import export
+import stock
 
 app = Flask(__name__)
 
@@ -34,6 +35,7 @@ def _db_path() -> str:
         config.set_db_path(path)
     db.init_db(path)
     cost.init_db(path)
+    stock.init_db(path)
     return path
 
 
@@ -377,6 +379,43 @@ def api_period_cost():
         "sold": cost.get_period_cost(path, period),
         "spend": cost.get_spend(path, period),
     })
+
+
+# ---- daily stock counts ----------------------------------------------------
+
+@app.get("/api/stock")
+def api_stock():
+    """What is on the shelf on a given day, what should be, and what is short."""
+    day = request.args.get("date") or _today()
+    return jsonify(stock.get_status(_db_path(), day))
+
+
+@app.post("/api/stock")
+def api_save_stock():
+    """Save a whole stock take in one go."""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = stock.save_counts(
+            _db_path(),
+            day=data.get("date") or _today(),
+            counts=data.get("counts", []),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({**result, "status": stock.get_status(_db_path(), result["date"])})
+
+
+@app.delete("/api/stock/<int:ingredient_id>")
+def api_delete_stock_count(ingredient_id: int):
+    day = request.args.get("date") or _today()
+    stock.delete_count(_db_path(), ingredient_id, day)
+    return jsonify({"ok": True, "status": stock.get_status(_db_path(), day)})
+
+
+@app.get("/api/stock/history/<int:ingredient_id>")
+def api_stock_history(ingredient_id: int):
+    limit = request.args.get("limit", default=30, type=int)
+    return jsonify(stock.get_history(_db_path(), ingredient_id, limit=limit))
 
 
 def _lan_ip() -> str:

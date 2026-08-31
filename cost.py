@@ -39,12 +39,13 @@ UNITS: dict[str, tuple[str, float]] = {
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ingredients (
-    id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    name   TEXT    NOT NULL UNIQUE,
-    unit   TEXT    NOT NULL,                 -- base unit everything is stored in
-    note   TEXT    NOT NULL DEFAULT '',
-    active INTEGER NOT NULL DEFAULT 1,
-    sort   INTEGER NOT NULL DEFAULT 0
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT    NOT NULL UNIQUE,
+    unit      TEXT    NOT NULL,              -- base unit everything is stored in
+    note      TEXT    NOT NULL DEFAULT '',
+    active    INTEGER NOT NULL DEFAULT 1,
+    sort      INTEGER NOT NULL DEFAULT 0,
+    min_stock REAL                           -- reorder level, NULL = no alert
 );
 
 -- One shopping trip's worth of one ingredient.
@@ -108,6 +109,11 @@ def init_db(db_path: str | Path) -> None:
     """Create the cost tables and seed the shopping list. Safe on every launch."""
     with db.connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        # CREATE TABLE IF NOT EXISTS leaves an older table untouched, so columns
+        # added after a release have to be patched in for databases already live.
+        columns = {r["name"] for r in conn.execute("PRAGMA table_info(ingredients)")}
+        if "min_stock" not in columns:
+            conn.execute("ALTER TABLE ingredients ADD COLUMN min_stock REAL")
         already = conn.execute("SELECT COUNT(*) FROM ingredients").fetchone()[0]
         if already == 0:
             conn.executemany(
@@ -260,7 +266,7 @@ def get_recipe(db_path: str | Path, menu_item_id: int) -> dict:
             ).fetchall()
         ]
 
-    costs = _unit_costs(db_path)
+    costs = unit_costs(db_path)
     total, missing = 0.0, []
     for ln in lines:
         uc = costs.get(ln["ingredient_id"])
@@ -280,7 +286,7 @@ def get_recipe(db_path: str | Path, menu_item_id: int) -> dict:
     }
 
 
-def _unit_costs(db_path: str | Path) -> dict[int, float]:
+def unit_costs(db_path: str | Path) -> dict[int, float]:
     """ingredient_id -> latest unit cost, for every ingredient ever bought."""
     with db.connect(db_path) as conn:
         return {
@@ -311,7 +317,7 @@ def _margin(price, cost: float, complete: bool) -> dict:
 def get_menu_costs(db_path: str | Path, include_inactive: bool = False) -> list[dict]:
     """Cost, price and margin for every menu item, in normal menu order so the
     table reads in the same sequence as the till buttons."""
-    costs = _unit_costs(db_path)
+    costs = unit_costs(db_path)
     with db.connect(db_path) as conn:
         sql = "SELECT * FROM menu_items"
         if not include_inactive:
@@ -351,6 +357,47 @@ def get_menu_costs(db_path: str | Path, include_inactive: bool = False) -> list[
     return out
 
 
+def usage_between(
+    db_path: str | Path, after: str, through: str
+) -> dict[int, float]:
+    """How much of each ingredient the sales in (after, through] should have used.
+
+    `after` is exclusive so it can be handed a stock-count date directly: what
+    was counted that evening is the opening figure, and only the days since it
+    count against it. Sold lines are matched to the menu by (name, temperature);
+    a drink with no recipe simply contributes nothing, which is why the caller
+    has to say whether an ingredient is costed at all before trusting a total.
+    """
+    with db.connect(db_path) as conn:
+        return {
+            r["ingredient_id"]: r["used"]
+            for r in conn.execute(
+                "SELECT rl.ingredient_id, SUM(rl.amount * ol.quantity) AS used "
+                "FROM order_lines ol "
+                "JOIN orders o ON o.id = ol.order_id "
+                "JOIN menu_items m ON m.id = ("
+                "  SELECT m2.id FROM menu_items m2 "
+                "  WHERE m2.name = ol.name AND m2.temperature = ol.temperature "
+                "  ORDER BY m2.id LIMIT 1) "
+                "JOIN recipe_lines rl ON rl.menu_item_id = m.id "
+                "WHERE o.sale_date > ? AND o.sale_date <= ? "
+                "GROUP BY rl.ingredient_id",
+                (after, through),
+            ).fetchall()
+        }
+
+
+def trading_days_between(db_path: str | Path, after: str, through: str) -> int:
+    """Days in (after, through] that actually took money — the divisor for an
+    average that should not be watered down by days the cafe was shut."""
+    with db.connect(db_path) as conn:
+        return conn.execute(
+            "SELECT COUNT(DISTINCT sale_date) FROM orders "
+            "WHERE sale_date > ? AND sale_date <= ?",
+            (after, through),
+        ).fetchone()[0]
+
+
 def get_ingredient_usage(db_path: str | Path, ingredient_id: int) -> list[dict]:
     """Every menu item this ingredient goes into, and how much of it each one takes."""
     with db.connect(db_path) as conn:
@@ -374,7 +421,7 @@ def get_period_cost(db_path: str | Path, prefix: str) -> dict:
     pair the till writes - so a typed-in dessert or a since-renamed item has no
     recipe to cost and is reported under `unpriced_qty` instead of being ignored.
     """
-    costs = _unit_costs(db_path)
+    costs = unit_costs(db_path)
     like = f"{prefix}%"
     with db.connect(db_path) as conn:
         totals = conn.execute(
@@ -489,10 +536,18 @@ def create_ingredient(db_path: str | Path, name: str, unit: str, note: str = "")
 
 
 def update_ingredient(db_path: str | Path, ingredient_id: int, **fields) -> None:
-    """Update name/unit/note/active. Changing the unit does NOT restate past
-    purchases - their unit cost was frozen in the old unit - so the UI warns first."""
-    allowed = {"name", "unit", "note", "active"}
+    """Update name/unit/note/active/min_stock. Changing the unit does NOT restate
+    past purchases - their unit cost was frozen in the old unit - so the UI warns first."""
+    allowed = {"name", "unit", "note", "active", "min_stock"}
     updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    # An empty reorder level means "stop alerting me", which has to reach the
+    # column as NULL — the filter above would otherwise drop it.
+    if fields.get("min_stock", False) in ("", None) and "min_stock" in fields:
+        updates["min_stock"] = None
+    elif "min_stock" in updates:
+        updates["min_stock"] = float(updates["min_stock"])
+        if updates["min_stock"] < 0:
+            raise ValueError("Reorder level cannot be negative.")
     if not updates:
         return
     if "unit" in updates and updates["unit"] not in UNITS:
